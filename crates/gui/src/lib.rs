@@ -348,6 +348,35 @@ impl Pilot {
                     )
                     .on_hover_text(format!("Source checkout: {text}"));
                 }
+                if let Some(system) = &local.system_package {
+                    let hover = format!(
+                        "{} came from your package manager, which vinoPilot doesn't \
+                         uninstall. Remove it with:\n{}",
+                        system.packages.join(", "),
+                        system.remove
+                    );
+                    // Right to left, so the label truncates rather than the button.
+                    let row = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
+                    let rtl = egui::Layout::right_to_left(egui::Align::Center);
+                    ui.allocate_ui_with_layout(row, rtl, |ui| {
+                        if ui
+                            .add(Button::ghost("Copy command").small())
+                            .on_hover_text(&hover)
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(system.remove.clone());
+                        }
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new("Distro package").size(12.0).color(p.warn),
+                                )
+                                .truncate(),
+                            )
+                            .on_hover_text(&hover);
+                        });
+                    });
+                }
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     ui.add_enabled_ui(!busy && !looking, |ui| {

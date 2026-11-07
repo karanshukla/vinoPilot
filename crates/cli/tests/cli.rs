@@ -60,6 +60,7 @@ fn list_json_names_every_component_and_its_ways_in() {
             "needs_root",
             "installed",
             "checkout",
+            "system_package",
             "update",
         ] {
             assert!(c.get(key).is_some(), "{} has no {key}", c["id"]);

@@ -20,6 +20,7 @@
       "needs_root": false,
       "installed": { "channel": "release", "version": "8.0.0" },
       "checkout": { "path": "/home/you/Development/vinoSearch", "describe": "v8-9-g1a2b3c4" },
+      "system_package": null,
       "latest": {
         "release": { "value": "v8" },
         "package": null,
@@ -38,6 +39,7 @@
 | `needs_root` | its actions run through `pkexec` |
 | `installed` | `null`, or how it's installed and its version (`null` when the binary wouldn't say, `"dev"` for a checkout build) |
 | `checkout` | `null`, or the git checkout in the source folder |
+| `system_package` | `null`, or the distro packages (rpm or deb) that own its commands in `/usr/bin`: `{"packages": ["vinoopeneffects"], "remove": "sudo dnf remove vinoopeneffects"}`. vinopilot doesn't remove these; `remove` is the command for the user to run |
 | `latest` | only from `check`. Each lookup is `null` (not applicable), `{"value": ...}` or `{"error": "sentence"}` |
 | `update` | `{"state": "available", "to": "v1.3.1"}`, `{"state": "up_to_date"}` or `{"state": "unknown", "reason": null or "sentence"}`, judged against the source that matches how it's installed |
 

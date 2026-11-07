@@ -8,7 +8,7 @@ use egui_kittest::Harness;
 use vino_ui::{App, egui, theme};
 use vinopilot_core::Config;
 use vinopilot_core::catalog::{Channel, Id};
-use vinopilot_core::detect::{Checkout, Installed, Local};
+use vinopilot_core::detect::{Checkout, Installed, Local, SystemPackage};
 use vinopilot_core::remote::Latest;
 use vinopilot_gui::Pilot;
 
@@ -36,6 +36,7 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Release, "1.3.0"),
                 checkout: None,
+                system_package: None,
             },
         ),
         (
@@ -43,6 +44,18 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Release, "12"),
                 checkout: None,
+                system_package: None,
+            },
+        ),
+        (
+            Id::App(App::OpenEffects),
+            Local {
+                installed: None,
+                checkout: None,
+                system_package: Some(SystemPackage {
+                    packages: vec!["vinoopeneffects".into()],
+                    remove: "sudo dnf remove vinoopeneffects".into(),
+                }),
             },
         ),
         (
@@ -50,6 +63,7 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Source, "1.4.0"),
                 checkout: checkout("vinoPop", "v1.4.0-13-g2f1c9e0"),
+                system_package: None,
             },
         ),
         (
@@ -57,6 +71,7 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Package, "0.5.1"),
                 checkout: None,
+                system_package: None,
             },
         ),
         (
@@ -64,6 +79,7 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Release, "8.0.0"),
                 checkout: None,
+                system_package: None,
             },
         ),
         (
@@ -71,6 +87,7 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Package, "0.6.0"),
                 checkout: None,
+                system_package: None,
             },
         ),
         (
@@ -78,6 +95,7 @@ fn demo() -> Pilot {
             Local {
                 installed: installed(Channel::Release, vinopilot_gui::VERSION),
                 checkout: None,
+                system_package: None,
             },
         ),
     ]);

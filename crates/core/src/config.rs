@@ -76,6 +76,7 @@ impl Config {
         Paths {
             home: home(),
             source_root: self.source_root.clone(),
+            system_bin: PathBuf::from("/usr/bin"),
         }
     }
 }
