@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">
+  <title>vinoPilot</title>
+  <rect width="60" height="60" rx="13" fill="#0e0e10"/>
+  <rect x="0.75" y="0.75" width="58.5" height="58.5" rx="12.25" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1.5"/>
+  <rect x="15" y="15" width="13" height="13" rx="3" fill="#fafafa"/>
+  <rect x="32" y="15" width="13" height="13" rx="3" fill="#fafafa"/>
+  <rect x="15" y="32" width="13" height="13" rx="3" fill="#fafafa"/>
+  <rect x="32" y="32" width="13" height="13" rx="3" fill="#56cc78"/>
+</svg>

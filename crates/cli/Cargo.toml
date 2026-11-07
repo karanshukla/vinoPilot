@@ -1,0 +1,19 @@
+[package]
+name = "vinopilot"
+description = "Install, update and uninstall the vinoPilot apps from their releases, a source checkout, PyPI or crates.io"
+readme = "../../README.md"
+keywords = ["openvino", "npu", "installer", "cli", "vinopilot"]
+categories = ["command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+vinopilot-core.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
