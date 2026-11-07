@@ -224,7 +224,44 @@ checkout() {
 }
 need() { command -v "$1" >/dev/null || { echo "✗ $1 isn't installed: $2" >&2; exit 1; }; }
 need_uv() { need uv "install it from https://docs.astral.sh/uv/, then try again"; }
-need_cargo() { need cargo "install Rust from https://rustup.rs, then try again"; }"#;
+need_cargo() { need cargo "install Rust from https://rustup.rs, then try again"; }
+# drop_cargo_copies BIN...: what an earlier `cargo install` left in
+# ~/.cargo/bin. Left there it still counts as installed, and on many PATHs
+# it runs instead of the release in ~/.local/bin.
+drop_cargo_copies() {
+    local b
+    for b in "$@"; do
+        [ -e "$HOME/.cargo/bin/$b" ] || continue
+        if command -v cargo >/dev/null && cargo uninstall "$b" 2>/dev/null; then
+            echo "cargo uninstall $b"
+        else
+            rm -f "$HOME/.cargo/bin/$b"
+            echo "Removed $HOME/.cargo/bin/$b"
+        fi
+    done
+}
+# The checkout, moved to the trash. Fails, keeping it, when it holds work
+# that's nowhere else.
+trash_checkout() {
+    [ -d "$CHECKOUT/.git" ] || { echo "No checkout at $CHECKOUT"; return 0; }
+    local why=""
+    if [ -n "$(git -C "$CHECKOUT" status --porcelain)" ]; then
+        why="it has uncommitted changes"
+    elif [ -n "$(git -C "$CHECKOUT" log --branches --not --remotes --oneline)" ]; then
+        why="it has commits that aren't pushed"
+    elif [ -n "$(git -C "$CHECKOUT" stash list)" ]; then
+        why="it has stashed changes"
+    fi
+    [ -z "$why" ] || { echo "✗ Kept $CHECKOUT: $why" >&2; return 1; }
+    if command -v gio >/dev/null && gio trash -- "$CHECKOUT"; then :
+    elif command -v kioclient >/dev/null && kioclient move "$CHECKOUT" trash:/; then :
+    elif command -v trash-put >/dev/null && trash-put -- "$CHECKOUT"; then :
+    else
+        echo "✗ Kept $CHECKOUT: no gio, kioclient or trash-put to move it to the trash with" >&2
+        return 1
+    fi
+    echo "Moved $CHECKOUT to the trash"
+}"#;
 
 /// vinoWhisper has no uninstaller: this undoes what its installer and
 /// vinowhisper-setup write, and leaves the models and config.
@@ -235,6 +272,12 @@ systemctl --user daemon-reload 2>/dev/null || true
 if command -v uv >/dev/null && uv tool list 2>/dev/null | grep -q '^vinowhisper '; then
     uv tool uninstall vinowhisper
 fi
+# A checkout's install links its .venv's commands into ~/.local/bin.
+for f in "$BIN"/vinowhisper-*; do
+    if [ -L "$f" ]; then
+        case "$(readlink "$f")" in */.venv/bin/vinowhisper-*) rm -f "$f" ;; esac
+    fi
+done
 rm -f "$BIN/vinowhisper-tray" "$BIN/vinowhisper-gui" "$BIN/vinowhisper-upgrade"
 rm -f "${XDG_DATA_HOME:-$HOME/.local/share}"/applications/io.github.karanshukla.vinowhisper*.desktop
 rm -f "${XDG_CONFIG_HOME:-$HOME/.config}"/autostart/io.github.karanshukla.vinowhisper*.desktop
@@ -255,6 +298,7 @@ else
     if [ -x "$CHECKOUT/gui/install.sh" ]; then "$CHECKOUT/gui/install.sh" --uninstall </dev/null || true; fi
     if command -v uv >/dev/null && uv tool list 2>/dev/null | grep -q '^vinospeak '; then uv tool uninstall vinospeak; fi
 fi
+drop_cargo_copies vinospeak-gui
 "#;
 
 /// vinoOpenEffects' uninstaller ships in the repo, not in ~/.local: use the
@@ -267,6 +311,7 @@ else
     "$tmp/src/scripts/uninstall.sh"
     rm -rf "$tmp"
 fi
+drop_cargo_copies vinoopeneffects vinoopeneffects-ctl vinoopeneffects-daemon
 "#;
 
 const OVFETCH_RELEASE: &str = r#"need sha256sum "install coreutils"
@@ -283,21 +328,22 @@ install -Dm755 "$tmp/ovfetch-x86_64-linux" "$BIN/ovfetch"
 "$BIN/ovfetch" --version
 "#;
 
-/// Refuses to delete a checkout with uncommitted or unpushed work.
-const UI_REMOVE_CHECKOUT: &str = r#"[ -d "$CHECKOUT/.git" ] || { echo "No checkout at $CHECKOUT"; exit 0; }
-if [ -n "$(git -C "$CHECKOUT" status --porcelain)" ]; then
-    echo "✗ $CHECKOUT has uncommitted changes; not deleting it" >&2; exit 1
-fi
-if [ -n "$(git -C "$CHECKOUT" log --branches --not --remotes --oneline)" ]; then
-    echo "✗ $CHECKOUT has commits that aren't pushed; not deleting it" >&2; exit 1
-fi
-rm -rf -- "$CHECKOUT"
-echo "Deleted $CHECKOUT"
-"#;
-
 /// The steps for `action` on `id` installed (or to be installed) through
-/// `channel`. Empty when that combination doesn't exist.
+/// `channel`. Empty when that combination doesn't exist. Uninstalling a
+/// source install ends by moving its checkout to the trash.
 pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
+    let mut steps = app_steps(id, channel, action);
+    if id != Id::Ui
+        && channel == Channel::Source
+        && action == Action::Uninstall
+        && !steps.is_empty()
+    {
+        steps.push(Step::user("trash_checkout"));
+    }
+    steps
+}
+
+fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
     use Action::*;
     use Channel::*;
     let s = Step::user;
@@ -356,7 +402,9 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::App(App::Search), Release, Update) => vec![s(
             r#"if [ -x "$BIN/vinosearch-upgrade" ]; then "$BIN/vinosearch-upgrade" </dev/null; else release_run install.sh; fi"#,
         )],
-        (Id::App(App::Search), Release, Uninstall) => vec![s("release_run install.sh --uninstall")],
+        (Id::App(App::Search), Release, Uninstall) => vec![s(
+            "release_run install.sh --uninstall; drop_cargo_copies vinosearch vinosearch-settings",
+        )],
         (Id::App(App::Search), Source, Install | Update) => {
             vec![s(
                 r#"checkout; need_cargo; "$CHECKOUT/scripts/install.sh" </dev/null"#,
@@ -364,7 +412,7 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         }
         (Id::App(App::Search), Source, Uninstall) => {
             vec![s(
-                r#""$CHECKOUT/scripts/install.sh" --uninstall </dev/null"#,
+                r#""$CHECKOUT/scripts/install.sh" --uninstall </dev/null; drop_cargo_copies vinosearch vinosearch-settings"#,
             )]
         }
 
@@ -373,14 +421,20 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::App(App::Watch), Release, Update) => vec![s(
             r#"if [ -x "$BIN/vinowatch-upgrade" ]; then sh "$BIN/vinowatch-upgrade" </dev/null; else release_run install.sh; fi"#,
         )],
-        (Id::App(App::Watch), Release, Uninstall) => vec![s("release_run install.sh --uninstall")],
+        (Id::App(App::Watch), Release, Uninstall) => {
+            vec![s(
+                "release_run install.sh --uninstall; drop_cargo_copies vinowatch",
+            )]
+        }
         (Id::App(App::Watch), Source, Install | Update) => {
             vec![s(
                 r#"checkout; need_cargo; sh "$CHECKOUT/install.sh" </dev/null"#,
             )]
         }
         (Id::App(App::Watch), Source, Uninstall) => {
-            vec![s(r#"sh "$CHECKOUT/install.sh" --uninstall </dev/null"#)]
+            vec![s(
+                r#"sh "$CHECKOUT/install.sh" --uninstall </dev/null; drop_cargo_copies vinowatch"#,
+            )]
         }
 
         // vinoOpenEffects
@@ -412,7 +466,9 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         // ovfetch: a bare binary in the release, a bin crate on crates.io.
         (Id::Ovfetch, Release, Install | Update) => vec![s(OVFETCH_RELEASE)],
         (Id::Ovfetch, Release, Uninstall) => {
-            vec![s(r#"rm -f "$BIN/ovfetch"; echo "Removed $BIN/ovfetch""#)]
+            vec![s(
+                r#"rm -f "$BIN/ovfetch"; echo "Removed $BIN/ovfetch"; drop_cargo_copies ovfetch"#,
+            )]
         }
         (Id::Ovfetch, Source, Install | Update) => {
             vec![s(
@@ -423,21 +479,25 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
             vec![s("need_cargo; cargo install --locked ovfetch")]
         }
         (Id::Ovfetch, Source | Package, Uninstall) => {
-            vec![s("need_cargo; cargo uninstall ovfetch")]
+            vec![s(r#"drop_cargo_copies ovfetch; rm -f "$BIN/ovfetch""#)]
         }
 
         // vinoPilot: its install.sh builds from a checkout when run from one.
         (Id::Pilot, Release, Install | Update) => vec![s(
             r#"if [ -x "$BIN/vinopilot-upgrade" ]; then bash "$BIN/vinopilot-upgrade" </dev/null; else release_run install.sh; fi"#,
         )],
-        (Id::Pilot, Release, Uninstall) => vec![s("release_run install.sh --uninstall")],
+        (Id::Pilot, Release, Uninstall) => vec![s(
+            "release_run install.sh --uninstall; drop_cargo_copies vinopilot vinopilot-gui",
+        )],
         (Id::Pilot, Source, Install | Update) => {
             vec![s(
                 r#"checkout; need_cargo; bash "$CHECKOUT/install.sh" </dev/null"#,
             )]
         }
         (Id::Pilot, Source, Uninstall) => {
-            vec![s(r#"bash "$CHECKOUT/install.sh" --uninstall </dev/null"#)]
+            vec![s(
+                r#"bash "$CHECKOUT/install.sh" --uninstall </dev/null; drop_cargo_copies vinopilot vinopilot-gui"#,
+            )]
         }
         (Id::Pilot, Package, Install | Update) => {
             vec![s(
@@ -452,7 +512,7 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::Ui, Source, Install | Update) => vec![s(
             r#"checkout; need_cargo; cd "$CHECKOUT"; cargo build --locked --example gallery; echo "Run it: cargo run --example gallery (in $CHECKOUT)""#,
         )],
-        (Id::Ui, Source, Uninstall) => vec![s(UI_REMOVE_CHECKOUT)],
+        (Id::Ui, Source, Uninstall) => vec![s("trash_checkout")],
 
         _ => Vec::new(),
     }
@@ -495,6 +555,20 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn uninstalling_from_source_trashes_the_checkout_last() {
+        let ends_trashing = |id: Id, channel| {
+            steps(id, channel, Action::Uninstall)
+                .last()
+                .is_some_and(|s| !s.root && s.script.ends_with("trash_checkout"))
+        };
+        for id in Id::ALL {
+            assert!(ends_trashing(id, Channel::Source), "{}", id.name());
+            assert!(!ends_trashing(id, Channel::Release), "{}", id.name());
+            assert!(!ends_trashing(id, Channel::Package), "{}", id.name());
         }
     }
 

@@ -244,6 +244,8 @@ fn local(
     };
     let from_crates = |name: &str| -> Option<Installed> {
         let (version, channel) = crates.get(name)?;
+        // The record outlives a binary deleted by hand.
+        paths.cargo_bin(name).exists().then_some(())?;
         installed(*channel, Some(version.clone()))
     };
     let from_uv = |tool: &str, bin: &str| -> Option<Installed> {
@@ -283,13 +285,14 @@ fn local(
                 Installed { channel, version }
             })
         }
-        Id::Ovfetch => from_crates("ovfetch").or_else(|| {
+        Id::Ovfetch => {
             let bin = paths.local_bin("ovfetch");
-            bin.exists().then(|| Installed {
-                channel: Channel::Release,
-                version: ask_version(&bin),
-            })
-        }),
+            if bin.exists() {
+                installed(Channel::Release, ask_version(&bin))
+            } else {
+                from_crates("ovfetch")
+            }
+        }
         Id::Pilot => {
             if paths.local_bin("vinopilot-upgrade").exists() {
                 by_marker("vinopilot-upgrade", "vinopilot")
@@ -367,6 +370,34 @@ mod tests {
             "[package]\nname = \"x\"\nversion = \"0.3.0\"\n\n[dependencies]\nversion = \"9\"\n";
         assert_eq!(cargo_toml_version(text).as_deref(), Some("0.3.0"));
         assert_eq!(cargo_toml_version("[workspace]\n"), None);
+    }
+
+    #[test]
+    fn a_release_ovfetch_wins_over_a_cargo_install() {
+        let home = std::env::temp_dir().join(format!("vinopilot-ovfetch-{}", std::process::id()));
+        std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+        let paths = Paths {
+            home: home.clone(),
+            source_root: home.join("src"),
+        };
+        let crates = HashMap::from([(
+            "ovfetch".to_string(),
+            ("0.6.0".to_string(), Channel::Source),
+        )]);
+        let uv = HashMap::new();
+        let channel = |paths: &Paths| {
+            local(paths, Id::Ovfetch, &crates, &uv, None)
+                .installed
+                .map(|i| i.channel)
+        };
+        // Only the record: the binary went without cargo uninstall.
+        assert_eq!(channel(&paths), None);
+        std::fs::create_dir_all(home.join(".cargo/bin")).unwrap();
+        std::fs::write(home.join(".cargo/bin/ovfetch"), "").unwrap();
+        assert_eq!(channel(&paths), Some(Channel::Source));
+        std::fs::write(home.join(".local/bin/ovfetch"), "").unwrap();
+        assert_eq!(channel(&paths), Some(Channel::Release));
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
