@@ -14,7 +14,7 @@ homepage.workspace = true
 [dependencies]
 vinopilot-core.workspace = true
 vino-ui = { workspace = true, features = ["egui"] }
-eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
 
 [dev-dependencies]
 # wgpu renders tests/screenshots.rs, the README's pictures.

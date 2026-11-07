@@ -15,6 +15,19 @@ pub struct Local {
     /// How it's installed, when it is.
     pub installed: Option<Installed>,
     pub checkout: Option<Checkout>,
+    /// A distro package with the same commands, which vinoPilot can't
+    /// remove: an old `rpm`/`deb` build, say.
+    pub system_package: Option<SystemPackage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SystemPackage {
+    /// `rpm` or `deb`.
+    pub kind: &'static str,
+    /// `vinoopeneffects`, `vinoopeneffects-daemon`.
+    pub packages: Vec<String>,
+    /// `sudo dnf remove vinoopeneffects vinoopeneffects-daemon`.
+    pub remove: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -36,6 +49,8 @@ pub struct Checkout {
 pub struct Paths {
     pub home: PathBuf,
     pub source_root: PathBuf,
+    /// `/usr/bin`, where a distro package puts its commands.
+    pub system_bin: PathBuf,
 }
 
 impl Paths {
@@ -184,6 +199,115 @@ fn checkout(paths: &Paths, id: Id) -> Option<Checkout> {
     Some(Checkout { path, describe })
 }
 
+/// The commands a distro package of `id` would put in `/usr/bin`.
+fn system_commands(id: Id) -> &'static [&'static str] {
+    match id {
+        Id::App(App::Whisper) => &["vinowhisper", "vinowhisper-setup", "vinowhisper-tray"],
+        Id::App(App::Speak) => &["vinospeak", "vinospeak-gui"],
+        Id::App(App::Pop) => &["vinopop"],
+        Id::App(App::Search) => &["vinosearch", "vinosearch-settings"],
+        Id::App(App::Watch) => &["vinowatch"],
+        Id::App(App::OpenEffects) => &[
+            "vinoopeneffects",
+            "vinoopeneffects-ctl",
+            "vinoopeneffects-daemon",
+        ],
+        Id::App(App::AuthFace) => &["vinoauthface"],
+        Id::Ovfetch => &["ovfetch"],
+        Id::Pilot => &["vinopilot", "vinopilot-gui"],
+        Id::Ui => &[],
+    }
+}
+
+/// `rpm -qf --qf '%{NAME}\n'`: a name per owned file, a sentence for the rest.
+pub fn parse_rpm_owners(text: &str) -> Vec<String> {
+    let mut names: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.contains(' '))
+        .map(str::to_string)
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// `dpkg-query -S`: `pkg: /usr/bin/x`, or `a, b: /usr/bin/x` when shared.
+pub fn parse_dpkg_owners(text: &str) -> Vec<String> {
+    let mut names: Vec<String> = text
+        .lines()
+        .filter_map(|l| l.split_once(": /").map(|(pkgs, _)| pkgs))
+        .flat_map(|pkgs| pkgs.split(", "))
+        .map(|p| p.split(':').next().unwrap_or(p).trim().to_string())
+        .filter(|p| !p.is_empty() && !p.contains(' '))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn has(program: &str) -> bool {
+    ["/usr/bin", "/bin", "/usr/sbin"]
+        .iter()
+        .any(|dir| Path::new(dir).join(program).exists())
+}
+
+/// What a package manager would remove `packages` with.
+fn remove_command(rpm: bool, packages: &[String]) -> String {
+    let tool = if !rpm {
+        "sudo apt remove"
+    } else if Path::new("/run/ostree-booted").exists() {
+        "sudo rpm-ostree uninstall"
+    } else if has("dnf") {
+        "sudo dnf remove"
+    } else if has("zypper") {
+        "sudo zypper remove"
+    } else {
+        "sudo rpm -e"
+    };
+    format!("{tool} {}", packages.join(" "))
+}
+
+/// The distro packages that own any of `id`'s commands in `/usr/bin`. Asks
+/// the package manager only when one of them is there.
+fn system_package(paths: &Paths, id: Id) -> Option<SystemPackage> {
+    let files: Vec<PathBuf> = system_commands(id)
+        .iter()
+        .map(|c| paths.system_bin.join(c))
+        .filter(|p| p.exists())
+        .collect();
+    if files.is_empty() {
+        return None;
+    }
+    let ask = |program: &str, args: &[&str]| -> Option<String> {
+        let out = crate::command(program)
+            .args(args)
+            .args(&files)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let (rpm, packages) = [
+        (
+            true,
+            ask("rpm", &["-qf", "--qf", "%{NAME}\\n"]).map(|t| parse_rpm_owners(&t)),
+        ),
+        (
+            false,
+            ask("dpkg-query", &["-S"]).map(|t| parse_dpkg_owners(&t)),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(rpm, found)| found.filter(|p| !p.is_empty()).map(|p| (rpm, p)))?;
+    Some(SystemPackage {
+        kind: if rpm { "rpm" } else { "deb" },
+        remove: remove_command(rpm, &packages),
+        packages,
+    })
+}
+
 /// The first of `candidates` that exists.
 fn first(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
@@ -244,6 +368,8 @@ fn local(
     };
     let from_crates = |name: &str| -> Option<Installed> {
         let (version, channel) = crates.get(name)?;
+        // The record outlives a binary deleted by hand.
+        paths.cargo_bin(name).exists().then_some(())?;
         installed(*channel, Some(version.clone()))
     };
     let from_uv = |tool: &str, bin: &str| -> Option<Installed> {
@@ -283,13 +409,14 @@ fn local(
                 Installed { channel, version }
             })
         }
-        Id::Ovfetch => from_crates("ovfetch").or_else(|| {
+        Id::Ovfetch => {
             let bin = paths.local_bin("ovfetch");
-            bin.exists().then(|| Installed {
-                channel: Channel::Release,
-                version: ask_version(&bin),
-            })
-        }),
+            if bin.exists() {
+                installed(Channel::Release, ask_version(&bin))
+            } else {
+                from_crates("ovfetch")
+            }
+        }
         Id::Pilot => {
             if paths.local_bin("vinopilot-upgrade").exists() {
                 by_marker("vinopilot-upgrade", "vinopilot")
@@ -314,6 +441,7 @@ fn local(
     Local {
         installed,
         checkout,
+        system_package: system_package(paths, id),
     }
 }
 
@@ -352,6 +480,23 @@ mod tests {
     }
 
     #[test]
+    fn package_owners_from_rpm_and_dpkg() {
+        let rpm = "vinoopeneffects\nvinoopeneffects-ctl\nvinoopeneffects\nfile /usr/bin/x is not owned by any package\n";
+        assert_eq!(
+            parse_rpm_owners(rpm),
+            vec!["vinoopeneffects", "vinoopeneffects-ctl"]
+        );
+        let dpkg = "vinowatch: /usr/bin/vinowatch\nvinopop:amd64, vinopop-data: /usr/bin/vinopop\n";
+        assert_eq!(
+            parse_dpkg_owners(dpkg),
+            vec!["vinopop", "vinopop-data", "vinowatch"]
+        );
+        assert!(
+            parse_dpkg_owners("dpkg-query: no path found matching pattern /usr/bin/x\n").is_empty()
+        );
+    }
+
+    #[test]
     fn version_lines() {
         assert_eq!(version_in("vinosearch 8.0.0\n").as_deref(), Some("8.0.0"));
         assert_eq!(version_in("vinoPop 1.4.0").as_deref(), Some("1.4.0"));
@@ -370,12 +515,42 @@ mod tests {
     }
 
     #[test]
+    fn a_release_ovfetch_wins_over_a_cargo_install() {
+        let home = std::env::temp_dir().join(format!("vinopilot-ovfetch-{}", std::process::id()));
+        std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+        let paths = Paths {
+            home: home.clone(),
+            source_root: home.join("src"),
+            system_bin: home.join("usr/bin"),
+        };
+        let crates = HashMap::from([(
+            "ovfetch".to_string(),
+            ("0.6.0".to_string(), Channel::Source),
+        )]);
+        let uv = HashMap::new();
+        let channel = |paths: &Paths| {
+            local(paths, Id::Ovfetch, &crates, &uv, None)
+                .installed
+                .map(|i| i.channel)
+        };
+        // Only the record: the binary went without cargo uninstall.
+        assert_eq!(channel(&paths), None);
+        std::fs::create_dir_all(home.join(".cargo/bin")).unwrap();
+        std::fs::write(home.join(".cargo/bin/ovfetch"), "").unwrap();
+        assert_eq!(channel(&paths), Some(Channel::Source));
+        std::fs::write(home.join(".local/bin/ovfetch"), "").unwrap();
+        assert_eq!(channel(&paths), Some(Channel::Release));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
     fn an_empty_home_has_nothing_installed() {
         let home = std::env::temp_dir().join(format!("vinopilot-test-{}", std::process::id()));
         std::fs::create_dir_all(&home).unwrap();
         let paths = Paths {
             home: home.clone(),
             source_root: home.join("src"),
+            system_bin: home.join("usr/bin"),
         };
         let crates = HashMap::new();
         let uv = HashMap::new();

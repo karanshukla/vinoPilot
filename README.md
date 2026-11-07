@@ -86,6 +86,7 @@ A Python TUI is planned and will live beside these, driving `vinopilot --json`.
 ## Limits
 
 - **vinoWhisper has no uninstaller of its own.** vinoPilot's undoes what its installer writes (the `uv` tool, the units, the tray and window, the menu entries) and leaves the downloaded models and settings.
+- **Uninstalling a source install moves its checkout to the trash** (with `gio`, `kioclient` or `trash-put`), unless it has uncommitted, unpushed or stashed work: then it's kept and the uninstall says why. Copies an old `cargo install` left in `~/.cargo/bin` go too.
 - **Detection is a best guess for hand installs.** An app with no `-upgrade` script, no uv receipt and no cargo record but a binary in `~/.local/bin` shows as a source install.
 - **vinoAuthFace's channel comes from its version.** Release builds are stamped with their tag, checkouts say `dev`.
 - Installers that want to ask you something get no terminal; each runs with its non-interactive defaults (vinoWhisper and vinoSpeak with `--gui`).

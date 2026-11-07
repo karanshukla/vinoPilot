@@ -208,6 +208,14 @@ fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
         };
         println!("{:<18} {:<12} {:<10} {}", c.name, version, via, update);
     }
+    for c in &all {
+        if let Some(system) = &c.local.system_package {
+            println!(
+                "\n{} is also a distro package, which vinopilot doesn't remove: {}",
+                c.name, system.remove
+            );
+        }
+    }
     Ok(())
 }
 
@@ -326,10 +334,22 @@ fn update(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failu
 }
 
 fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
-    let channel = match (args.via, installed_channel(config, id)) {
-        (Some(via), _) => via,
-        (None, Some(found)) => found,
-        (None, None) => return Err(Failure::Failed(format!("{} isn't installed", id.name()))),
+    let local = detect::scan(&config.paths())
+        .remove(&id)
+        .unwrap_or_default();
+    let system = local.system_package.map(|p| p.remove);
+    let channel = match (args.via, local.installed.map(|i| i.channel), &system) {
+        (Some(via), ..) => via,
+        (None, Some(found), _) => found,
+        (None, None, Some(remove)) => {
+            return Err(Failure::Failed(format!(
+                "{} is only installed by your package manager: {remove}",
+                id.name()
+            )));
+        }
+        (None, None, None) => {
+            return Err(Failure::Failed(format!("{} isn't installed", id.name())));
+        }
     };
     if !args.yes {
         if !std::io::stdin().is_terminal() {
@@ -344,7 +364,16 @@ fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
             return Err(Failure::Failed("left it installed".into()));
         }
     }
-    run(config, args, id, channel, Action::Uninstall)
+    run(config, args, id, channel, Action::Uninstall)?;
+    if let Some(remove) = system
+        && !args.json
+    {
+        println!(
+            "{} is still a distro package. Remove it with: {remove}",
+            id.name()
+        );
+    }
+    Ok(())
 }
 
 fn steps(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failure> {
