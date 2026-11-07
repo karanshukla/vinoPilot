@@ -369,7 +369,7 @@ impl Pilot {
                             }
                             Some(installed) if confirming => {
                                 let label = if id == Id::Ui {
-                                    "Delete checkout"
+                                    "Move to trash"
                                 } else {
                                     "Uninstall"
                                 };
@@ -390,7 +390,7 @@ impl Pilot {
                                     intent = Some((installed.channel, Action::Update));
                                 }
                                 let label = if id == Id::Ui {
-                                    "Delete…"
+                                    "Trash checkout…"
                                 } else {
                                     "Uninstall…"
                                 };
@@ -524,9 +524,16 @@ impl Pilot {
                 bottom: 0,
             }))
             .show(ui, |ui| {
-                widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
+                // Above the scroll area, so it stays put; as wide as the
+                // cards, which sit inside the scroll bar and its gap.
+                ui.scope(|ui| {
+                    let bar = ui.spacing().scroll.allocated_width();
+                    let inside = ui.available_width() - bar - widgets::SCROLL_GAP;
+                    ui.set_max_width(inside.min(PAGE_MAX));
                     self.header(ui);
-                    ui.add_space(6.0);
+                });
+                ui.add_space(6.0);
+                widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
                     self.grid(ui);
                     self.settings(ui);
                 });
