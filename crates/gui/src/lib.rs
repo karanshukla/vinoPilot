@@ -19,27 +19,26 @@ pub mod desktop;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// A card is at least this wide; the grid fits as many columns as it can.
-const CARD_MIN: f32 = 270.0;
+/// Nine cards, three by three; one column when three don't fit.
+const COLUMNS: usize = 3;
+const CARD_MIN: f32 = 260.0;
 const CARD_HEIGHT: f32 = 172.0;
 const GAP: f32 = 12.0;
 /// The grid stops growing here, so cards don't stretch across a 4K screen.
-const PAGE_MAX: f32 = 4.0 * CARD_MIN + 3.0 * GAP + 120.0;
+const PAGE_MAX: f32 = 3.0 * 340.0 + 2.0 * GAP;
 
-const GROUPS: [(&str, &[Id]); 2] = [
-    (
-        "Apps",
-        &[
-            Id::App(vino_ui::App::Whisper),
-            Id::App(vino_ui::App::AuthFace),
-            Id::App(vino_ui::App::OpenEffects),
-            Id::App(vino_ui::App::Pop),
-            Id::App(vino_ui::App::Speak),
-            Id::App(vino_ui::App::Search),
-            Id::App(vino_ui::App::Watch),
-        ],
-    ),
-    ("Tools and libraries", &[Id::Ovfetch, Id::Ui, Id::Pilot]),
+/// The grid, in vinopilot.ca's order. vinoPilot itself has no card: its
+/// version and update live in the header.
+const CARDS: [Id; 9] = [
+    Id::App(vino_ui::App::Whisper),
+    Id::App(vino_ui::App::AuthFace),
+    Id::App(vino_ui::App::OpenEffects),
+    Id::App(vino_ui::App::Pop),
+    Id::App(vino_ui::App::Speak),
+    Id::App(vino_ui::App::Search),
+    Id::App(vino_ui::App::Watch),
+    Id::Ovfetch,
+    Id::Ui,
 ];
 
 pub struct Pilot {
@@ -138,8 +137,9 @@ impl Pilot {
         )
     }
 
+    /// What Update all does: the cards. vinoPilot updates from the header.
     fn updatable(&self) -> Vec<Id> {
-        Id::ALL
+        CARDS
             .into_iter()
             .filter(|id| matches!(self.update(*id), Update::Available { .. }))
             .collect()
@@ -186,6 +186,7 @@ impl Pilot {
         ui.horizontal(|ui| {
             widgets::title(ui, "vinoPilot");
             widgets::muted(ui, VERSION);
+            self.self_update(ui);
             if ui
                 .add(Button::ghost(vino_ui::family::SITE_LABEL).small())
                 .on_hover_text(vino_ui::family::SITE)
@@ -208,6 +209,29 @@ impl Pilot {
             "Each app installs through its own installer, which checks what it downloads.",
         );
         ui.add_space(6.0);
+    }
+
+    /// "Update vinoPilot to vX" once a check finds one, through the same
+    /// steps as the other components, for however vinoPilot is installed.
+    fn self_update(&mut self, ui: &mut egui::Ui) {
+        let Update::Available { to } = self.update(Id::Pilot) else {
+            return;
+        };
+        let Some(installed) = self.local.get(&Id::Pilot).and_then(|l| l.installed.clone()) else {
+            return;
+        };
+        let ctx = ui.ctx().clone();
+        let clicked = ui
+            .add_enabled(
+                !self.busy(),
+                Button::primary(format!("Update vinoPilot to {to}")).small(),
+            )
+            .on_hover_text("Restart vinoPilot afterwards to run the new version")
+            .clicked();
+        if clicked {
+            self.queue.clear();
+            self.start(&ctx, Id::Pilot, installed.channel, Action::Update);
+        }
     }
 
     /// Check for updates and Update all. In a right-to-left layout the
@@ -249,12 +273,15 @@ impl Pilot {
         }
     }
 
-    fn grid(&mut self, ui: &mut egui::Ui, label: &str, ids: &[Id]) {
-        widgets::group_label(ui, label);
+    fn grid(&mut self, ui: &mut egui::Ui) {
         let width = ui.available_width();
-        let columns = (((width + GAP) / (CARD_MIN + GAP)).floor() as usize).clamp(1, 4);
+        let columns = if width + GAP >= COLUMNS as f32 * (CARD_MIN + GAP) {
+            COLUMNS
+        } else {
+            1
+        };
         let card = (width - GAP * (columns - 1) as f32) / columns as f32;
-        for chunk in ids.chunks(columns) {
+        for chunk in CARDS.chunks(columns) {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = GAP;
                 for id in chunk {
@@ -499,9 +526,8 @@ impl Pilot {
             .show(ui, |ui| {
                 widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
                     self.header(ui);
-                    for (label, ids) in GROUPS {
-                        self.grid(ui, label, ids);
-                    }
+                    ui.add_space(6.0);
+                    self.grid(ui);
                     self.settings(ui);
                 });
             });

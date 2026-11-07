@@ -48,9 +48,9 @@ x86_64 only for the release binaries, same as the apps it installs.
 
 ## The window
 
-A card per component, with its version, how it's installed (the tag top right), and **Update** or **Install**. Before installing, the switch on the card picks the way in. **Update all** appears once a check finds something. The installer's output streams into a panel underneath, with **Stop**. vinoAuthFace installs system-wide, so its actions go through `pkexec` and ask for your password.
+Nine cards, three by three: the seven apps, ovfetch and vinoUserInterface. Each has its version, how it's installed (the tag top right), and **Update** or **Install**. Before installing, the switch on the card picks the way in. **Update all** appears once a check finds something. vinoPilot's own version sits next to its name in the header, with **Update vinoPilot to vX** beside it when there's a newer one. The installer's output streams into a panel underneath, with **Stop**. vinoAuthFace installs system-wide, so its actions go through `pkexec` and ask for your password.
 
-It follows the desktop's light or dark setting, and drops to one column when snapped to half a laptop screen:
+It follows the desktop's light or dark setting, and drops to one column when three don't fit, like when snapped to half a laptop screen:
 
 <p align="center">
   <img src="docs/images/window-light.png" width="64%" alt="The window in the light theme">
