@@ -5,7 +5,7 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-11-06
+## [0.1.0] - 2026-11-07
 
 ### Features
 
@@ -13,4 +13,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detect how each is already installed, and check GitHub, PyPI, crates.io and checkouts for something newer
 - `vinopilot` command with `--json` output as the API for other frontends
 - `vinopilot-gui` window: a card grid with Update all, and the installer's output underneath
+- `vinopilot-tui` on PyPI (`uv tool install vinopilot`): the same in a terminal, driving `vinopilot --json`
 - `install.sh`: hash-checked release install, source install from a checkout, `--no-gui`, `--uninstall`
