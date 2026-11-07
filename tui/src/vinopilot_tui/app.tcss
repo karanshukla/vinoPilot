@@ -1,0 +1,66 @@
+#status {
+    height: 1;
+    padding: 0 1;
+    background: $panel;
+    color: $text-muted;
+}
+
+#table {
+    height: 1fr;
+}
+
+#log {
+    height: 12;
+    border-top: solid $primary;
+    padding: 0 1;
+}
+
+ChooseScreen, ConfirmScreen, TextScreen, InputScreen, MissingScreen {
+    align: center middle;
+}
+
+.dialog {
+    width: 72;
+    height: auto;
+    max-height: 90%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+TextScreen .dialog {
+    width: 90%;
+    height: 90%;
+}
+
+TextScreen VerticalScroll {
+    height: 1fr;
+}
+
+MissingScreen .dialog {
+    width: 84;
+}
+
+#missing-log {
+    height: 10;
+    margin-top: 1;
+}
+
+.title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.hint {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+.buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+.buttons Button {
+    margin-right: 2;
+}

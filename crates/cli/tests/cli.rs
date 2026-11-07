@@ -57,6 +57,7 @@ fn list_json_names_every_component_and_its_ways_in() {
             "blurb",
             "repo",
             "channels",
+            "registry",
             "needs_root",
             "installed",
             "checkout",
@@ -82,6 +83,11 @@ fn list_json_names_every_component_and_its_ways_in() {
         whisper["channels"],
         serde_json::json!(["release", "source", "package"])
     );
+    assert_eq!(whisper["registry"], "pypi");
+    let ovfetch = components.iter().find(|c| c["id"] == "ovfetch").unwrap();
+    assert_eq!(ovfetch["registry"], "crates.io");
+    let pop = components.iter().find(|c| c["id"] == "vinopop").unwrap();
+    assert!(pop["registry"].is_null());
     std::fs::remove_dir_all(home).unwrap();
 }
 

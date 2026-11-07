@@ -20,10 +20,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo deny check
 cargo build -p vinopilot -p vinopilot-gui && tests/install-e2e.sh target/debug
+cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --frozen ruff format --check .
 ```
 
 CI also builds the release tarball the way `release.yml` does and runs it.
 
+- The terminal UI in `tui/` needs [uv](https://docs.astral.sh/uv/); `cd tui && uv sync` makes its venv, `VINOPILOT_BIN=../target/debug/vinopilot uv run vinopilot-tui` runs it on this checkout's command. Its tests drive a fake `vinopilot`, so a JSON change needs `tests/fake_vinopilot.py` updated too.
 - `crates/cli/tests/cli.rs` is the `--json` contract. Change it when you change the shape, and say so in the changelog and `docs/json-api.md`.
 - Changed the window: regenerate the pictures with `cargo test -p vinopilot-gui --test screenshots -- --ignored` (needs a GPU or lavapipe) and commit `docs/images`.
 - Changed an app's steps in `crates/core/src/catalog.rs`: run that install, update and uninstall for real and say so in the PR. The tests only check the scripts parse.
