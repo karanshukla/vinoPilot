@@ -81,7 +81,7 @@ App names work with or without the `vino`. `--via` takes `release` (the default)
 | `crates/gui` | `vinopilot-gui`: the egui window, drawn with [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) |
 | `install.sh` | the one-line installer, and the source install from a checkout |
 
-A Python TUI is planned and will live beside these, driving `vinopilot --json`.
+| `tui/` | `vinopilot-tui`: the same in a terminal, from PyPI (`uv tool install vinopilot`). A thin [Textual](https://textual.textualize.io/) frontend over `vinopilot --json`; it offers to fetch the command when it isn't there. |
 
 ## Limits
 

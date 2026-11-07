@@ -8,7 +8,7 @@ vinoPilot: installs, updates and uninstalls the vinoPilot apps (vinoWhisper, vin
 
 ## Layout
 
-A cargo workspace, planned to become a monorepo with a Python TUI beside it (driving `vinopilot --json`, not reimplementing the catalog). Keep repo-level tooling language-neutral.
+A cargo workspace plus a Python package beside it. Keep repo-level tooling language-neutral.
 
 - `crates/core` (`vinopilot-core`): no UI, no egui.
   - `catalog.rs`: the components and, per (component, channel, action), the shell steps. Each step is a script run with `bash -c` (or `pkexec env ... bash -c` when `root`), with a shared prelude (`release_run`, `checkout`, `need_*`). Paths reach scripts as `$CHECKOUT`, `$REPO_URL`, `$RELEASE` env vars, never formatted in.
@@ -18,6 +18,7 @@ A cargo workspace, planned to become a monorepo with a Python TUI beside it (dri
   - `job.rs`: runs steps in a background thread, streams lines through a `Notify` callback.
   - `lib.rs` `command()`: every child process goes through it, for the `PATH` fix-up (`~/.local/bin`, `~/.cargo/bin`).
 - `crates/cli` (`vinopilot`): hand-rolled args, `--json` is the API (docs/json-api.md, pinned by tests/cli.rs).
+- `tui/` (`vinopilot` on PyPI, command `vinopilot-tui`): Textual. `cli.py` is the only thing that runs the command (`--json`, docs/json-api.md); `app.py` is the table, the log and the modal screens. It knows no catalog: names, channels, registries and update states all come from the JSON. Tests run against `tests/fake_vinopilot.py`, never cargo; `VINOPILOT_BIN=target/debug/vinopilot` tries it on the real thing.
 - `crates/gui` (`vinopilot-gui`): lib (`Pilot`) + thin main. A 3x3 grid (`CARDS`: seven apps, ovfetch, vinoUserInterface; one column when three don't fit), log panel at the bottom. vinoPilot has no card: its version and self-update are in the header, and Update all skips it.
 
 ## Commands
@@ -29,6 +30,7 @@ cargo fmt --all --check
 cargo deny check
 cargo build -p vinopilot -p vinopilot-gui && tests/install-e2e.sh target/debug
 cargo test -p vinopilot-gui --test screenshots -- --ignored   # regenerates docs/images
+cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --frozen ruff format --check .
 ```
 
 ## Gotchas
@@ -39,6 +41,7 @@ cargo test -p vinopilot-gui --test screenshots -- --ignored   # regenerates docs
 - **The release CLI is static musl, the window is glibc.** eframe dlopens libEGL/wayland/X11, which static musl can't. The window is built on ubuntu-22.04 for an old glibc floor.
 - **vino-user-interface's `Updater` is keyed on its `App` enum**, which has no vinoPilot, so vinoPilot updates itself as a catalog component (`Id::Pilot`) instead.
 - **`Pilot::ui` doesn't call `theme::follow_desktop`**; the eframe `App` impl does. Otherwise the screenshot test's light render comes out dark.
+- **The TUI's command can't be `vinopilot`.** `uv tool install` writes scripts to `~/.local/bin`, where the release installer puts the Rust command; a same-named script would replace it.
 - **Nothing goes online until asked.** `list` and the window's startup scan are local; only `check` / Check for updates call `remote`.
 
 ## CI and repo rules

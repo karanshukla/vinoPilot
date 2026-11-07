@@ -1,0 +1,56 @@
+[project]
+name = "vinopilot"
+version = "0.1.0"
+description = "Terminal UI for vinoPilot: install, update and uninstall the vinoPilot apps"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Karan Shukla" }]
+keywords = ["vinopilot", "installer", "tui", "textual", "linux"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Installation/Setup",
+]
+requires-python = ">=3.11"
+dependencies = ["textual>=8,<9"]
+
+[project.urls]
+Homepage = "https://vinopilot.ca/"
+Repository = "https://github.com/karanshukla/vinopilot"
+Issues = "https://github.com/karanshukla/vinopilot/issues"
+Changelog = "https://github.com/karanshukla/vinopilot/blob/main/CHANGELOG.md"
+
+# Not `vinopilot`: that's the Rust command, and `uv tool install` writes its
+# scripts to the same ~/.local/bin the release installer puts it in.
+[project.scripts]
+vinopilot-tui = "vinopilot_tui.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vinopilot_tui"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "ruff"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

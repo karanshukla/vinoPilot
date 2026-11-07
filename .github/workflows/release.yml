@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like v0.1.0 to publish a release with prebuilt binaries, then
-# (after approval) the three crates to crates.io.
+# (after approval) the three crates to crates.io and the terminal UI to PyPI.
 #
 # Jobs are split by permission. `build` holds no write token. `attest` holds
 # only the OIDC and attestation scopes needed to sign build provenance.
@@ -43,6 +43,8 @@ jobs:
         run: |
           cargo metadata --no-deps --format-version 1 | jq -r '.packages[].version' | sort -u > versions
           test "$(cat versions)" = "${GITHUB_REF_NAME#v}" || { echo "tag $GITHUB_REF_NAME, crates $(tr '\n' ' ' < versions)" >&2; exit 1; }
+          tui="$(sed -n 's/^version = "\(.*\)"$/\1/p' tui/pyproject.toml | head -1)"
+          test "$tui" = "${GITHUB_REF_NAME#v}" || { echo "tag $GITHUB_REF_NAME, tui/pyproject.toml $tui" >&2; exit 1; }
       # The tag's CI run may not have finished, so test the tagged tree here too.
       - run: cargo test --locked --workspace
       - name: Build and package
@@ -121,3 +123,24 @@ jobs:
           for crate in vinopilot-core vinopilot vinopilot-gui; do
             cargo publish --locked -p "$crate"
           done
+
+  # The same for PyPI: it trusts this workflow in the `pypi` environment, no
+  # token. The sdist and wheel are built here from the tagged tree.
+  pypi:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: tui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv build
+      - run: uv publish --trusted-publishing always
