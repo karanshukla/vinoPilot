@@ -37,4 +37,4 @@ CI also builds the release tarball the way `release.yml` does and runs it.
 1. A variant: if it's in vino-user-interface's `App`, it comes with `Id::App`; otherwise add one to `Id` with its name, blurb and repo.
 2. Its steps in `catalog::steps` for every channel `channels()` offers (a test fails until they exist).
 3. How to tell it's installed, in `detect::local`.
-4. A card in the window's `GROUPS`, and a row in the README table.
+4. A card in the window's `CARDS` (keep the grid full: it's 3 by 3), and a row in the README table.

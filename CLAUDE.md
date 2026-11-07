@@ -18,7 +18,7 @@ A cargo workspace, planned to become a monorepo with a Python TUI beside it (dri
   - `job.rs`: runs steps in a background thread, streams lines through a `Notify` callback.
   - `lib.rs` `command()`: every child process goes through it, for the `PATH` fix-up (`~/.local/bin`, `~/.cargo/bin`).
 - `crates/cli` (`vinopilot`): hand-rolled args, `--json` is the API (docs/json-api.md, pinned by tests/cli.rs).
-- `crates/gui` (`vinopilot-gui`): lib (`Pilot`) + thin main. Cards in a grid, log panel at the bottom.
+- `crates/gui` (`vinopilot-gui`): lib (`Pilot`) + thin main. A 3x3 grid (`CARDS`: seven apps, ovfetch, vinoUserInterface; one column when three don't fit), log panel at the bottom. vinoPilot has no card: its version and self-update are in the header, and Update all skips it.
 
 ## Commands
 
