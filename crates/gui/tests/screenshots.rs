@@ -50,9 +50,10 @@ fn demo() -> Pilot {
         (
             Id::App(App::OpenEffects),
             Local {
-                installed: None,
-                checkout: None,
+                installed: installed(Channel::Source, "4"),
+                checkout: checkout("vinoOpenEffects", "v5"),
                 system_package: Some(SystemPackage {
+                    kind: "rpm",
                     packages: vec!["vinoopeneffects".into()],
                     remove: "sudo dnf remove vinoopeneffects".into(),
                 }),

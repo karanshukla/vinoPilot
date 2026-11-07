@@ -9,7 +9,7 @@ use std::sync::mpsc::{Receiver, channel};
 use eframe::egui::{self, RichText, vec2};
 use vino_ui::{Button, ChipKind, Row, Tone, a11y, theme, widgets};
 use vinopilot_core::catalog::{self, Action, Channel, Id};
-use vinopilot_core::detect::{Installed, Local, Paths};
+use vinopilot_core::detect::{Installed, Local, Paths, SystemPackage};
 use vinopilot_core::job::{Env, Job, Outcome};
 use vinopilot_core::remote::Latest;
 use vinopilot_core::status::{self, Update};
@@ -58,6 +58,8 @@ pub struct Pilot {
     /// Components `Update all` still has to do, in order.
     queue: Vec<Id>,
     focused: bool,
+    /// The card whose remove command was just copied, and when.
+    copied: Option<(Id, f64)>,
 }
 
 impl Pilot {
@@ -84,6 +86,7 @@ impl Pilot {
             job_settled: true,
             queue: Vec::new(),
             focused: false,
+            copied: None,
         }
     }
 
@@ -309,6 +312,14 @@ impl Pilot {
         let channels = id.channels();
         let choice = self.choice.entry(id).or_insert(channels[0]);
         let looking = self.scanning.is_some() && self.local.is_empty();
+        let now = ctx.input(|i| i.time);
+        let copied_now = self
+            .copied
+            .is_some_and(|(copied, at)| copied == id && now - at < COPIED_FOR);
+        if copied_now {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(COPIED_FOR));
+        }
+        let mut copy_clicked = false;
 
         egui::Frame::new()
             .fill(if confirming { p.error_tint } else { p.surface })
@@ -336,6 +347,12 @@ impl Pilot {
                                 "Installs system-wide, so it asks for your password",
                             );
                         }
+                        if let Some(system) = &local.system_package
+                            && distro_tag(ui, system, copied_now)
+                        {
+                            ui.ctx().copy_text(system.remove.clone());
+                            copy_clicked = true;
+                        }
                     });
                 });
                 widgets::muted(ui, id.blurb());
@@ -348,36 +365,6 @@ impl Pilot {
                     )
                     .on_hover_text(format!("Source checkout: {text}"));
                 }
-                if let Some(system) = &local.system_package {
-                    let hover = format!(
-                        "{} came from your package manager, which vinoPilot doesn't \
-                         uninstall. Remove it with:\n{}",
-                        system.packages.join(", "),
-                        system.remove
-                    );
-                    // Right to left, so the label truncates rather than the button.
-                    let row = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
-                    let rtl = egui::Layout::right_to_left(egui::Align::Center);
-                    ui.allocate_ui_with_layout(row, rtl, |ui| {
-                        if ui
-                            .add(Button::ghost("Copy command").small())
-                            .on_hover_text(&hover)
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(system.remove.clone());
-                        }
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new("Distro package").size(12.0).color(p.warn),
-                                )
-                                .truncate(),
-                            )
-                            .on_hover_text(&hover);
-                        });
-                    });
-                }
-
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     ui.add_enabled_ui(!busy && !looking, |ui| {
                         ui.horizontal_wrapped(|ui| match &local.installed {
@@ -433,6 +420,9 @@ impl Pilot {
             });
 
         self.confirm = confirm;
+        if copy_clicked {
+            self.copied = Some((id, now));
+        }
         if let Some((channel, action)) = intent {
             self.queue.clear();
             self.start(&ctx, id, channel, action);
@@ -568,6 +558,51 @@ impl Pilot {
                 });
             });
     }
+}
+
+/// How long a distro tag says "copied".
+const COPIED_FOR: f64 = 1.5;
+
+/// `RPM` in the warn tag's colours, as a button: a distro package vinoPilot
+/// doesn't remove, which copies the command that does. True when clicked.
+fn distro_tag(ui: &mut egui::Ui, system: &SystemPackage, copied: bool) -> bool {
+    let p = theme::palette(ui.ctx());
+    let text = if copied { "copied" } else { system.kind };
+    let button = egui::Button::new(
+        RichText::new(text.to_uppercase())
+            .size(10.5)
+            .family(theme::bold())
+            .color(p.warn),
+    )
+    .fill(p.warn_tint)
+    .stroke(egui::Stroke::NONE)
+    .corner_radius(4.0)
+    .min_size(vec2(0.0, 16.0));
+    let response = ui
+        .scope(|ui| {
+            ui.spacing_mut().button_padding = vec2(6.0, 0.0);
+            ui.spacing_mut().interact_size.y = 16.0;
+            ui.add(button)
+        })
+        .inner
+        .on_hover_text(format!(
+            "{} came from your package manager, which vinoPilot doesn't uninstall.\n\
+             Click to copy the command that does:\n{}",
+            system.packages.join(", "),
+            system.remove
+        ));
+    let name = if copied {
+        format!(
+            "Copied the command that removes the {} package",
+            system.kind
+        )
+    } else {
+        format!("Copy the command that removes the {} package", system.kind)
+    };
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_label(name));
+    response.clicked()
 }
 
 /// "1.4.0 · v1.4.1 available", coloured by whether it needs the user.

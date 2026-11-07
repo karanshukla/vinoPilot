@@ -22,6 +22,8 @@ pub struct Local {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SystemPackage {
+    /// `rpm` or `deb`.
+    pub kind: &'static str,
     /// `vinoopeneffects`, `vinoopeneffects-daemon`.
     pub packages: Vec<String>,
     /// `sudo dnf remove vinoopeneffects vinoopeneffects-daemon`.
@@ -300,6 +302,7 @@ fn system_package(paths: &Paths, id: Id) -> Option<SystemPackage> {
     .into_iter()
     .find_map(|(rpm, found)| found.filter(|p| !p.is_empty()).map(|p| (rpm, p)))?;
     Some(SystemPackage {
+        kind: if rpm { "rpm" } else { "deb" },
         remove: remove_command(rpm, &packages),
         packages,
     })
