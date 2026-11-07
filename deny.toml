@@ -1,0 +1,29 @@
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"]
+
+[advisories]
+yanked = "deny"
+# zbus 5's helper crates, merged into zbus 6. Pulled in by eframe's
+# accesskit_unix (the screen-reader bridge); goes when accesskit moves to zbus 6.
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; pulled in by eframe's accesskit" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; pulled in by eframe's accesskit" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; pulled in by eframe's accesskit" },
+]
+
+[licenses]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "BSL-1.0", "CC0-1.0", "MPL-2.0"]
+exceptions = [
+    # Inter, the font vinoUI embeds.
+    { crate = "vino-user-interface", allow = ["OFL-1.1"] },
+    # egui's fallback fonts (default_fonts, for glyphs Inter's subset lacks).
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

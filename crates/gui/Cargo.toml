@@ -1,0 +1,22 @@
+[package]
+name = "vinopilot-gui"
+description = "The vinopilot window: install, update and uninstall the vinoPilot apps"
+readme = "../../README.md"
+keywords = ["openvino", "npu", "installer", "egui", "vinopilot"]
+categories = ["gui"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+vinopilot-core.workspace = true
+vino-ui = { workspace = true, features = ["egui"] }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+
+[dev-dependencies]
+# wgpu renders tests/screenshots.rs, the README's pictures.
+egui_kittest = { version = "0.37", default-features = false, features = ["wgpu", "snapshot"] }
+image = { version = "0.25", default-features = false, features = ["png"] }

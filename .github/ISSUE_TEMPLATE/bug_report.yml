@@ -1,0 +1,33 @@
+name: Bug report
+description: An install, update or uninstall went wrong, or an app shows the wrong version or way in.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Which app, which button or command, what you expected, what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: list
+    attributes:
+      label: vinopilot list --json
+      description: Paste the output. It holds paths under your home and versions; nothing else.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: The installer's output
+      description: The log panel's text, or the terminal output of the `vinopilot install/update/uninstall` you ran.
+      render: text
+
+  - type: input
+    id: distro
+    attributes:
+      label: Distro and desktop
+      placeholder: Fedora 45, KDE Plasma 6.5, Wayland

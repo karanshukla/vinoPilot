@@ -1,0 +1,18 @@
+[package]
+name = "vinopilot-core"
+description = "What vinopilot knows about the vinoPilot apps: how each installs, updates and uninstalls, what's on this machine, and what's newest"
+readme = "README.md"
+keywords = ["openvino", "npu", "installer", "vinopilot"]
+categories = ["development-tools"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+# family (the app list) and update (tag parsing); no egui.
+vino-ui.workspace = true
+serde.workspace = true
+serde_json.workspace = true

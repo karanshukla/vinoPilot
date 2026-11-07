@@ -1,2 +1,93 @@
-# vinopilot
-An application for managing the Vinopilot suite of applications
+# vinoPilot
+
+One place to install, update and uninstall the [vinoPilot](https://vinopilot.ca/) apps. Each app already has its own hash-checked installer; vinoPilot knows which one to run, how each app got onto your machine, and whether there's something newer for that way in.
+
+![The vinoPilot window in the dark theme: a grid of app cards, each with its version, how it was installed, and Update or Install](docs/images/window-dark.png)
+
+It manages:
+
+| Component | Release | Source | Package |
+|---|---|---|---|
+| [vinoWhisper](https://github.com/karanshukla/vinoWhisper) | yes | yes | [PyPI](https://pypi.org/project/vinowhisper/) |
+| [vinoAuthFace](https://github.com/karanshukla/vinoAuthFace) | yes (asks for your password) | yes | |
+| [vinoOpenEffects](https://github.com/karanshukla/vinoOpenEffects) | yes | yes | |
+| [vinoPop](https://github.com/karanshukla/vinoPop) | yes | yes | |
+| [vinoSpeak](https://github.com/karanshukla/vinoSpeak) | yes | yes | [PyPI](https://pypi.org/project/vinospeak/) |
+| [vinoSearch](https://github.com/karanshukla/vinoSearch) | yes | yes | |
+| [vinoWatch](https://github.com/karanshukla/vinoWatch) | yes | yes | |
+| [ovfetch](https://github.com/karanshukla/ovfetch) | yes | yes | [crates.io](https://crates.io/crates/ovfetch) |
+| [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) | | a checkout that builds | a library, nothing to install |
+| vinoPilot itself | yes | yes | [crates.io](https://crates.io/crates/vinopilot) |
+
+- **Release** runs the app's own one-line installer from its latest GitHub release, which checks the download against the release's `SHA256SUMS`. Updates go through the `<app>-upgrade` copy each installer keeps.
+- **Source** clones the repo into your source folder (`~/Development` if you have one, else `~/src`; change it in the window or with `vinopilot config source_root DIR`), then runs the checkout's own install script. Updating is `git pull --ff-only` and the same again.
+- **Package** is `uv tool` for PyPI and `cargo install` for crates.io.
+
+vinoPilot works out how each app is installed by looking, not by keeping its own records: the `-upgrade` scripts the release installers leave, `uv`'s tool receipts, cargo's `.crates.toml`, and each binary's `--version`. So it also sees apps you installed by hand before vinoPilot existed.
+
+Nothing goes online until you press **Check for updates** (or run `vinopilot check`). Then it asks GitHub, PyPI and crates.io for the newest versions and runs `git fetch` in each checkout.
+
+## Install
+
+```sh
+curl -fsSL https://github.com/karanshukla/vinopilot/releases/latest/download/install.sh | bash
+```
+
+This puts `vinopilot` (the command) and `vinopilot-gui` (the window) in `~/.local/bin` and adds vinoPilot to your app menu. No sudo. `| bash -s -- --no-gui` skips the window; `| bash -s -- --uninstall` removes it all.
+
+From crates.io, or a checkout:
+
+```sh
+cargo install --locked vinopilot vinopilot-gui && vinopilot-gui --install-desktop
+./install.sh                     # in a checkout: builds, then installs as above
+```
+
+`--install-desktop` adds the app menu entry and icon (install.sh does it for you); `--uninstall-desktop` takes them out.
+
+x86_64 only for the release binaries, same as the apps it installs.
+
+## The window
+
+A card per component, with its version, how it's installed (the tag top right), and **Update** or **Install**. Before installing, the switch on the card picks the way in. **Update all** appears once a check finds something. The installer's output streams into a panel underneath, with **Stop**. vinoAuthFace installs system-wide, so its actions go through `pkexec` and ask for your password.
+
+It follows the desktop's light or dark setting, and drops to one column when snapped to half a laptop screen:
+
+<p align="center">
+  <img src="docs/images/window-light.png" width="64%" alt="The window in the light theme">
+  <img src="docs/images/narrow-dark.png" width="27%" alt="The window at 420 px wide: one column of cards">
+</p>
+
+## The command
+
+```sh
+vinopilot list                    # what's installed, and how (offline)
+vinopilot check                   # plus the newest version of each (online)
+vinopilot install whisper --via pypi
+vinopilot update --all
+vinopilot uninstall pop
+vinopilot steps search install    # print the shell an action would run, without running it
+```
+
+App names work with or without the `vino`. `--via` takes `release` (the default), `source`, `pypi` or `crates`. Exit codes: 0 done, 1 failed, 2 bad usage.
+
+`--json` turns it into an API: `list` and `check` print one document, and actions print one event per line. It's what a frontend in another language should drive instead of reimplementing the catalog; [docs/json-api.md](docs/json-api.md) has the shape.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `crates/core` | `vinopilot-core`: the catalog (each app's install, update and uninstall steps per way in), detection, version checks, the job runner. No UI. |
+| `crates/cli` | `vinopilot`: the command, and the `--json` API |
+| `crates/gui` | `vinopilot-gui`: the egui window, drawn with [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) |
+| `install.sh` | the one-line installer, and the source install from a checkout |
+
+A Python TUI is planned and will live beside these, driving `vinopilot --json`.
+
+## Limits
+
+- **vinoWhisper has no uninstaller of its own.** vinoPilot's undoes what its installer writes (the `uv` tool, the units, the tray and window, the menu entries) and leaves the downloaded models and settings.
+- **Detection is a best guess for hand installs.** An app with no `-upgrade` script, no uv receipt and no cargo record but a binary in `~/.local/bin` shows as a source install.
+- **vinoAuthFace's channel comes from its version.** Release builds are stamped with their tag, checkouts say `dev`.
+- Installers that want to ask you something get no terminal; each runs with its non-interactive defaults (vinoWhisper and vinoSpeak with `--gui`).
+
+[vinopilot.ca](https://vinopilot.ca/) has the apps themselves. Issues and PRs welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
