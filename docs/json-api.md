@@ -17,6 +17,7 @@
       "blurb": "Find files by what they're about",
       "repo": "karanshukla/vinoSearch",
       "channels": ["release", "source"],
+      "registry": null,
       "needs_root": false,
       "installed": { "channel": "release", "version": "8.0.0" },
       "checkout": { "path": "/home/you/Development/vinoSearch", "describe": "v8-9-g1a2b3c4" },
@@ -35,6 +36,7 @@
 |---|---|
 | `id` | what the command line takes: `vinowhisper`, `ovfetch`, `vinouserinterface`, `vinopilot` |
 | `channels` | the ways it can be installed, best first: `release`, `source`, `package` (PyPI or crates.io) |
+| `registry` | `"pypi"` or `"crates.io"` when `channels` has `package`, else `null` |
 | `needs_root` | its actions run through `pkexec` |
 | `installed` | `null`, or how it's installed and its version (`null` when the binary wouldn't say, `"dev"` for a checkout build) |
 | `checkout` | `null`, or the git checkout in the source folder |

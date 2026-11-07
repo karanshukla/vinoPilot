@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::catalog::{Channel, Id};
+use crate::catalog::{Channel, Id, Package};
 use crate::detect::{Installed, Local};
 use crate::remote::Latest;
 
@@ -30,6 +30,9 @@ pub struct Component {
     pub blurb: &'static str,
     pub repo: &'static str,
     pub channels: Vec<Channel>,
+    /// `"pypi"` or `"crates.io"` when there's a `package` channel, so a
+    /// frontend can name the registry without knowing the catalog.
+    pub registry: Option<&'static str>,
     pub needs_root: bool,
     #[serde(flatten)]
     pub local: Local,
@@ -88,6 +91,10 @@ pub fn component(id: Id, local: Local, latest: Option<Latest>) -> Component {
         blurb: id.blurb(),
         repo: id.repo(),
         channels: id.channels(),
+        registry: id.package().map(|p| match p {
+            Package::PyPi(_) => "pypi",
+            Package::Crate(_) | Package::Library(_) => "crates.io",
+        }),
         needs_root: id.needs_root(),
         local,
         latest,
