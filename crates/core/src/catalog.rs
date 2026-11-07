@@ -240,6 +240,15 @@ drop_cargo_copies() {
         fi
     done
 }
+# follow_tui upgrade|uninstall: vinopilot-tui (PyPI's vinopilot) is a
+# frontend to this command, so it updates and goes with it. Nothing when it
+# isn't a uv tool.
+follow_tui() {
+    command -v uv >/dev/null || return 0
+    [ -f "$(uv tool dir)/vinopilot/uv-receipt.toml" ] || return 0
+    echo "== uv tool $1 vinopilot"
+    uv tool "$1" vinopilot
+}
 # The checkout, moved to the trash. Fails, keeping it, when it holds work
 # that's nowhere else.
 trash_checkout() {
@@ -329,10 +338,18 @@ install -Dm755 "$tmp/ovfetch-x86_64-linux" "$BIN/ovfetch"
 "#;
 
 /// The steps for `action` on `id` installed (or to be installed) through
-/// `channel`. Empty when that combination doesn't exist. Uninstalling a
+/// `channel`. Empty when that combination doesn't exist. Updating or
+/// uninstalling vinoPilot takes the terminal UI along. Uninstalling a
 /// source install ends by moving its checkout to the trash.
 pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
     let mut steps = app_steps(id, channel, action);
+    if id == Id::Pilot && !steps.is_empty() {
+        match action {
+            Action::Install => {}
+            Action::Update => steps.push(Step::user("follow_tui upgrade")),
+            Action::Uninstall => steps.push(Step::user("follow_tui uninstall")),
+        }
+    }
     if id != Id::Ui
         && channel == Channel::Source
         && action == Action::Uninstall
@@ -569,6 +586,28 @@ mod tests {
             assert!(ends_trashing(id, Channel::Source), "{}", id.name());
             assert!(!ends_trashing(id, Channel::Release), "{}", id.name());
             assert!(!ends_trashing(id, Channel::Package), "{}", id.name());
+        }
+    }
+
+    #[test]
+    fn the_terminal_ui_follows_vinopilots_updates_and_uninstall() {
+        let follows = |id, channel, action| {
+            steps(id, channel, action)
+                .iter()
+                .any(|s| s.script.contains("\nfollow_tui "))
+        };
+        for id in Id::ALL {
+            for channel in id.channels() {
+                let pilot = id == Id::Pilot;
+                assert!(!follows(id, channel, Action::Install), "{}", id.name());
+                assert_eq!(follows(id, channel, Action::Update), pilot, "{}", id.name());
+                assert_eq!(
+                    follows(id, channel, Action::Uninstall),
+                    pilot,
+                    "{}",
+                    id.name()
+                );
+            }
         }
     }
 
