@@ -5,6 +5,26 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-08
+
+### Features
+
+- The window's version is a button: it checks for a newer vinoPilot, updates it and restarts the window
+- An About popup says how vinoPilot and its commands are installed
+- `p` in the terminal UI checks, updates and restarts vinoPilot from the status line
+- Updating or uninstalling vinoPilot takes the terminal UI along
+- A warning when a command is in both `~/.local/bin` and `~/.cargo/bin`, where one hides the other
+- The other vino apps' About pages list vinoPilot (vino-ui 0.4.0), and the window has vino-ui 0.4's quieter look: ink and near-white primary buttons, green kept for what is up to date or on
+
+### Changed
+
+- **Breaking, `vinopilot-core`:** `Id::Pilot` is gone; vinoPilot is `Id::App(App::Pilot)`, from vino-ui 0.4.0's `App`. Its name, blurb, repo, slug and `--json` output are unchanged
+
+### Fixed
+
+- Installing ovfetch or vinoPilot removes the other channel's copy
+- vinoWhisper and vinoSpeak installs remove a release's `-upgrade` script
+
 ## [0.1.0] - 2026-11-07
 
 ### Features
