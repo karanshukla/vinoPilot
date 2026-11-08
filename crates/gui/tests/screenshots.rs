@@ -99,7 +99,7 @@ fn demo() -> Pilot {
             },
         ),
         (
-            Id::Pilot,
+            Id::App(App::Pilot),
             Local {
                 installed: installed(Channel::Release, vinopilot_gui::VERSION),
                 checkout: None,
@@ -153,7 +153,7 @@ fn demo() -> Pilot {
             },
         ),
         (
-            Id::Pilot,
+            Id::App(App::Pilot),
             Latest {
                 release: release(&format!("v{}", vinopilot_gui::VERSION)),
                 ..Default::default()

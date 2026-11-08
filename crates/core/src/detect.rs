@@ -228,7 +228,7 @@ fn commands(id: Id) -> &'static [&'static str] {
         ],
         Id::App(App::AuthFace) => &["vinoauthface"],
         Id::Ovfetch => &["ovfetch"],
-        Id::Pilot => &["vinopilot", "vinopilot-gui"],
+        Id::App(App::Pilot) => &["vinopilot", "vinopilot-gui"],
         Id::Ui => &[],
     }
 }
@@ -485,7 +485,7 @@ fn local(
                 from_crates("ovfetch")
             }
         }
-        Id::Pilot => {
+        Id::App(App::Pilot) => {
             if paths.local_bin("vinopilot-upgrade").exists() {
                 by_marker("vinopilot-upgrade", "vinopilot")
             } else {

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use vino_ui::theme;
+use vino_ui::{App, theme};
 use vinopilot_core::Config;
 use vinopilot_core::catalog::{Channel, Id};
 use vinopilot_core::detect::{Installed, Local, Part};
@@ -18,7 +18,7 @@ fn header(latest: HashMap<Id, Latest>) -> Harness<'static, (Pilot, bool)> {
 
 fn header_with(latest: HashMap<Id, Latest>, parts: Vec<Part>) -> Harness<'static, (Pilot, bool)> {
     let local = HashMap::from([(
-        Id::Pilot,
+        Id::App(App::Pilot),
         Local {
             installed: Some(Installed {
                 channel: Channel::Release,
@@ -54,7 +54,7 @@ fn the_version_is_a_button_before_any_check() {
 #[test]
 fn a_newer_release_turns_it_into_the_update() {
     let latest = HashMap::from([(
-        Id::Pilot,
+        Id::App(App::Pilot),
         Latest {
             release: Some(Ok("v99.0.0".into())),
             ..Default::default()
@@ -66,7 +66,7 @@ fn a_newer_release_turns_it_into_the_update() {
 #[test]
 fn an_up_to_date_check_says_so() {
     let latest = HashMap::from([(
-        Id::Pilot,
+        Id::App(App::Pilot),
         Latest {
             release: Some(Ok(format!("v{VERSION}"))),
             ..Default::default()

@@ -233,7 +233,10 @@ impl Pilot {
     fn version_button(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let busy = self.busy();
-        let installed = self.local.get(&Id::Pilot).and_then(|l| l.installed.clone());
+        let installed = self
+            .local
+            .get(&Id::App(vino_ui::App::Pilot))
+            .and_then(|l| l.installed.clone());
         if let Some(newer) = self.updated_to(installed.as_ref()) {
             if ui
                 .add(Button::primary(format!("Restart into {newer}")).small())
@@ -255,9 +258,14 @@ impl Pilot {
         }
         let how = installed.as_ref().map_or_else(
             || "This window isn't an installed vinoPilot".to_string(),
-            |i| format!("Installed from {}", i.channel.label(Id::Pilot)),
+            |i| {
+                format!(
+                    "Installed from {}",
+                    i.channel.label(Id::App(vino_ui::App::Pilot))
+                )
+            },
         );
-        match (self.update(Id::Pilot), installed) {
+        match (self.update(Id::App(vino_ui::App::Pilot)), installed) {
             (Update::Available { to }, Some(installed)) => {
                 if ui
                     .add_enabled(
@@ -268,7 +276,12 @@ impl Pilot {
                     .clicked()
                 {
                     self.queue.clear();
-                    self.start(&ctx, Id::Pilot, installed.channel, Action::Update);
+                    self.start(
+                        &ctx,
+                        Id::App(vino_ui::App::Pilot),
+                        installed.channel,
+                        Action::Update,
+                    );
                 }
             }
             (update, _) => {
@@ -315,7 +328,11 @@ impl Pilot {
         let dim = |ui: &mut egui::Ui, text: &str| {
             ui.add(egui::Label::new(RichText::new(text).color(muted)).extend())
         };
-        let local = self.local.get(&Id::Pilot).cloned().unwrap_or_default();
+        let local = self
+            .local
+            .get(&Id::App(vino_ui::App::Pilot))
+            .cloned()
+            .unwrap_or_default();
         ui.label(
             RichText::new(format!("vinoPilot {VERSION}"))
                 .strong()
@@ -330,7 +347,7 @@ impl Pilot {
                 dim(ui, "Installed from");
                 match &local.installed {
                     Some(i) => {
-                        let label = i.channel.label(Id::Pilot);
+                        let label = i.channel.label(Id::App(vino_ui::App::Pilot));
                         match i.version.as_deref() {
                             Some(v) if v != VERSION => ui.label(format!("{label}, {v}")),
                             _ => ui.label(label),
@@ -350,7 +367,7 @@ impl Pilot {
                     ui.end_row();
                 }
                 dim(ui, "Updates");
-                match self.update(Id::Pilot) {
+                match self.update(Id::App(vino_ui::App::Pilot)) {
                     _ if self.checking.is_some() => dim(ui, "Checking…"),
                     Update::Available { to } => ui.label(format!("{to} available")),
                     Update::UpToDate => ui.label("Up to date"),
@@ -381,8 +398,9 @@ impl Pilot {
     /// window's.
     fn updated_to(&self, installed: Option<&Installed>) -> Option<String> {
         let job = self.job.as_ref()?;
-        let done =
-            job.id == Id::Pilot && job.action == Action::Update && job.outcome() == Outcome::Done;
+        let done = job.id == Id::App(vino_ui::App::Pilot)
+            && job.action == Action::Update
+            && job.outcome() == Outcome::Done;
         let version = installed?.version.clone()?;
         (done && self.scanning.is_none() && version != VERSION).then_some(version)
     }
@@ -785,7 +803,7 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
         Update::Unknown { reason: None } => (version.to_string(), p.text),
     };
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
-    if id == Id::Pilot && version != VERSION {
+    if id == Id::App(vino_ui::App::Pilot) && version != VERSION {
         shown.on_hover_text(format!("This window is {VERSION}"));
     }
 }

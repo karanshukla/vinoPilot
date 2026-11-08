@@ -9,13 +9,11 @@ pub enum Id {
     App(App),
     Ovfetch,
     Ui,
-    /// vinopilot itself.
-    Pilot,
 }
 
 impl Id {
     pub const ALL: [Id; 10] = [
-        Id::Pilot,
+        Id::App(App::Pilot),
         Id::App(App::Whisper),
         Id::App(App::AuthFace),
         Id::App(App::OpenEffects),
@@ -49,26 +47,28 @@ impl Id {
             Id::App(app) => app.name(),
             Id::Ovfetch => "ovfetch",
             Id::Ui => "vinoUserInterface",
-            Id::Pilot => "vinoPilot",
         }
     }
 
     pub fn blurb(self) -> &'static str {
         match self {
+            // Its own card says what it is to the person using it.
+            Id::App(App::Pilot) => "This app: installs and updates the others",
             Id::App(app) => app.blurb(),
             Id::Ovfetch => "Fetches the OpenVINO runtime an NPU needs",
             Id::Ui => "The egui library the apps are drawn with",
-            Id::Pilot => "This app: installs and updates the others",
         }
     }
 
     /// `owner/name` on GitHub.
     pub fn repo(self) -> &'static str {
         match self {
+            // Lowercase like its release URLs and the checkout folder
+            // install.sh makes; GitHub ignores case, the folder name doesn't.
+            Id::App(App::Pilot) => "karanshukla/vinopilot",
             Id::App(app) => app.repo(),
             Id::Ovfetch => "karanshukla/ovfetch",
             Id::Ui => "karanshukla/vinoUserInterface",
-            Id::Pilot => "karanshukla/vinopilot",
         }
     }
 
@@ -84,7 +84,7 @@ impl Id {
             Id::App(App::Whisper) => Some(Package::PyPi("vinowhisper")),
             Id::App(App::Speak) => Some(Package::PyPi("vinospeak")),
             Id::Ovfetch => Some(Package::Crate("ovfetch")),
-            Id::Pilot => Some(Package::Crate("vinopilot")),
+            Id::App(App::Pilot) => Some(Package::Crate("vinopilot")),
             Id::Ui => Some(Package::Library("vino-user-interface")),
             Id::App(_) => None,
         }
@@ -343,7 +343,7 @@ install -Dm755 "$tmp/ovfetch-x86_64-linux" "$BIN/ovfetch"
 /// source install ends by moving its checkout to the trash.
 pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
     let mut steps = app_steps(id, channel, action);
-    if id == Id::Pilot && !steps.is_empty() {
+    if id == Id::App(App::Pilot) && !steps.is_empty() {
         match action {
             Action::Install => {}
             Action::Update => steps.push(Step::user("follow_tui upgrade")),
@@ -508,31 +508,31 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         }
 
         // vinoPilot: its install.sh builds from a checkout when run from one.
-        (Id::Pilot, Release, Install | Update) => vec![s(
+        (Id::App(App::Pilot), Release, Install | Update) => vec![s(
             r#"if [ -x "$BIN/vinopilot-upgrade" ]; then bash "$BIN/vinopilot-upgrade" </dev/null; else release_run install.sh; fi
 drop_cargo_copies vinopilot vinopilot-gui"#,
         )],
-        (Id::Pilot, Release, Uninstall) => vec![s(
+        (Id::App(App::Pilot), Release, Uninstall) => vec![s(
             "release_run install.sh --uninstall; drop_cargo_copies vinopilot vinopilot-gui",
         )],
-        (Id::Pilot, Source, Install | Update) => {
+        (Id::App(App::Pilot), Source, Install | Update) => {
             vec![s(
                 r#"checkout; need_cargo; bash "$CHECKOUT/install.sh" </dev/null; drop_cargo_copies vinopilot vinopilot-gui"#,
             )]
         }
-        (Id::Pilot, Source, Uninstall) => {
+        (Id::App(App::Pilot), Source, Uninstall) => {
             vec![s(
                 r#"bash "$CHECKOUT/install.sh" --uninstall </dev/null; drop_cargo_copies vinopilot vinopilot-gui"#,
             )]
         }
-        (Id::Pilot, Package, Install | Update) => {
+        (Id::App(App::Pilot), Package, Install | Update) => {
             vec![s(
                 r#"need_cargo; cargo install --locked --force vinopilot vinopilot-gui
 rm -f "$BIN/vinopilot" "$BIN/vinopilot-gui" "$BIN/vinopilot-upgrade"
 "$HOME/.cargo/bin/vinopilot-gui" --install-desktop"#,
             )]
         }
-        (Id::Pilot, Package, Uninstall) => vec![s(
+        (Id::App(App::Pilot), Package, Uninstall) => vec![s(
             "need_cargo; vinopilot-gui --uninstall-desktop || true; for c in vinopilot vinopilot-gui; do cargo uninstall \"$c\" || true; done",
         )],
 
@@ -609,7 +609,7 @@ mod tests {
         };
         for id in Id::ALL {
             for channel in id.channels() {
-                let pilot = id == Id::Pilot;
+                let pilot = id == Id::App(App::Pilot);
                 assert!(!follows(id, channel, Action::Install), "{}", id.name());
                 assert_eq!(follows(id, channel, Action::Update), pilot, "{}", id.name());
                 assert_eq!(
@@ -630,7 +630,7 @@ mod tests {
                 .map(|s| s.script.as_str())
                 .collect()
         };
-        for (id, bin) in [(Id::Ovfetch, "ovfetch"), (Id::Pilot, "vinopilot")] {
+        for (id, bin) in [(Id::Ovfetch, "ovfetch"), (Id::App(App::Pilot), "vinopilot")] {
             for action in [Action::Install, Action::Update] {
                 let release = script(id, Channel::Release, action);
                 assert!(
@@ -649,7 +649,7 @@ mod tests {
                 .contains(r#"rm -f "$BIN/ovfetch""#)
         );
         assert!(
-            script(Id::Pilot, Channel::Source, Action::Install)
+            script(Id::App(App::Pilot), Channel::Source, Action::Install)
                 .contains("drop_cargo_copies vinopilot")
         );
     }
