@@ -347,6 +347,18 @@ fn shadowed(paths: &Paths, id: Id, path: &std::ffi::OsStr) -> Vec<Shadowed> {
         .collect()
 }
 
+/// vinoAuthFace's channel: what its deploy recorded in `installed-from`, or
+/// for a deploy from before that, a `dev` version for a checkout's build. A
+/// checkout on a tag is stamped with the tag, so only the record is sure.
+fn authface_channel(recorded: Option<&str>, version: Option<&str>) -> Channel {
+    match recorded.map(str::trim) {
+        Some("source") => Channel::Source,
+        Some("release") => Channel::Release,
+        _ if version == Some("dev") => Channel::Source,
+        _ => Channel::Release,
+    }
+}
+
 /// The first of `candidates` that exists.
 fn first(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
@@ -439,12 +451,9 @@ fn local(
             let bin = Path::new("/usr/local/bin/vinoauthface");
             bin.exists().then(|| {
                 let version = ask_version(bin);
-                // Release builds are stamped with their tag; a checkout's is `dev`.
-                let channel = if version.as_deref() == Some("dev") {
-                    Channel::Source
-                } else {
-                    Channel::Release
-                };
+                let recorded =
+                    std::fs::read_to_string("/usr/local/share/face-auth/installed-from").ok();
+                let channel = authface_channel(recorded.as_deref(), version.as_deref());
                 Installed { channel, version }
             })
         }
@@ -614,6 +623,21 @@ mod tests {
             cargo.join("vinosearch")
         );
         std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn authface_trusts_its_record_over_the_version() {
+        assert_eq!(
+            authface_channel(Some("source\n"), Some("v3.1.0")),
+            Channel::Source
+        );
+        assert_eq!(
+            authface_channel(Some("release\n"), Some("dev")),
+            Channel::Release
+        );
+        assert_eq!(authface_channel(None, Some("dev")), Channel::Source);
+        assert_eq!(authface_channel(None, Some("v3.1.0")), Channel::Release);
+        assert_eq!(authface_channel(None, None), Channel::Release);
     }
 
     #[test]
