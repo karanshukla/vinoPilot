@@ -188,8 +188,7 @@ impl Pilot {
         let narrow = ui.available_width() < 620.0;
         ui.horizontal(|ui| {
             widgets::title(ui, "vinoPilot");
-            widgets::muted(ui, VERSION);
-            self.self_update(ui);
+            self.version_button(ui);
             if ui
                 .add(Button::ghost(vino_ui::family::SITE_LABEL).small())
                 .on_hover_text(vino_ui::family::SITE)
@@ -214,27 +213,77 @@ impl Pilot {
         ui.add_space(6.0);
     }
 
-    /// "Update vinoPilot to vX" once a check finds one, through the same
-    /// steps as the other components, for however vinoPilot is installed.
-    fn self_update(&mut self, ui: &mut egui::Ui) {
-        let Update::Available { to } = self.update(Id::Pilot) else {
-            return;
-        };
-        let Some(installed) = self.local.get(&Id::Pilot).and_then(|l| l.installed.clone()) else {
-            return;
-        };
+    /// The window's version as a button: it checks for a newer vinoPilot,
+    /// then updates it (through the same steps as the cards, for however it's
+    /// installed), then restarts into the new one.
+    fn version_button(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        let clicked = ui
-            .add_enabled(
-                !self.busy(),
-                Button::primary(format!("Update vinoPilot to {to}")).small(),
-            )
-            .on_hover_text("Restart vinoPilot afterwards to run the new version")
-            .clicked();
-        if clicked {
-            self.queue.clear();
-            self.start(&ctx, Id::Pilot, installed.channel, Action::Update);
+        let busy = self.busy();
+        let installed = self.local.get(&Id::Pilot).and_then(|l| l.installed.clone());
+        if let Some(newer) = self.updated_to(installed.as_ref()) {
+            if ui
+                .add(Button::primary(format!("Restart into {newer}")).small())
+                .on_hover_text(format!(
+                    "vinoPilot {newer} is installed; this window is {VERSION}"
+                ))
+                .clicked()
+            {
+                restart(&ctx);
+            }
+            return;
         }
+        if self.checking.is_some() {
+            ui.add_enabled(
+                false,
+                Button::ghost(format!("{VERSION} · checking…")).small(),
+            );
+            return;
+        }
+        let how = installed.as_ref().map_or_else(
+            || "This window isn't an installed vinoPilot".to_string(),
+            |i| format!("Installed from {}", i.channel.label(Id::Pilot)),
+        );
+        match (self.update(Id::Pilot), installed) {
+            (Update::Available { to }, Some(installed)) => {
+                if ui
+                    .add_enabled(
+                        !busy,
+                        Button::primary(format!("{VERSION} · update to {to}")).small(),
+                    )
+                    .on_hover_text(format!("Update vinoPilot to {to}. {how}."))
+                    .clicked()
+                {
+                    self.queue.clear();
+                    self.start(&ctx, Id::Pilot, installed.channel, Action::Update);
+                }
+            }
+            (update, _) => {
+                let (label, hover) = match update {
+                    Update::UpToDate => (format!("{VERSION} · up to date"), "Check again".into()),
+                    Update::Unknown { reason: Some(why) } => {
+                        (VERSION.to_string(), format!("{why}. Check again"))
+                    }
+                    _ => (VERSION.to_string(), "Check for a newer vinoPilot".into()),
+                };
+                if ui
+                    .add(Button::ghost(label).small())
+                    .on_hover_text(format!("{hover}. {how}."))
+                    .clicked()
+                {
+                    self.check(&ctx);
+                }
+            }
+        }
+    }
+
+    /// The version vinoPilot's own update just installed, if it isn't this
+    /// window's.
+    fn updated_to(&self, installed: Option<&Installed>) -> Option<String> {
+        let job = self.job.as_ref()?;
+        let done =
+            job.id == Id::Pilot && job.action == Action::Update && job.outcome() == Outcome::Done;
+        let version = installed?.version.clone()?;
+        (done && self.scanning.is_none() && version != VERSION).then_some(version)
     }
 
     /// Check for updates and Update all. In a right-to-left layout the
@@ -637,6 +686,14 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
     if id == Id::Pilot && version != VERSION {
         shown.on_hover_text(format!("This window is {VERSION}"));
+    }
+}
+
+/// Starts the installed window and closes this one.
+fn restart(ctx: &egui::Context) {
+    match vinopilot_core::command("vinopilot-gui").spawn() {
+        Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        Err(e) => eprintln!("vinopilot: couldn't start the new vinopilot-gui: {e}"),
     }
 }
 
