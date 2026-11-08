@@ -297,7 +297,7 @@ const SPEAK_SOURCE: &str = r#"need_uv
 cd "$CHECKOUT"
 uv export --locked --no-dev --no-emit-project --no-hashes -o constraints.txt
 uv tool install --force --constraints constraints.txt .
-rm -f constraints.txt
+rm -f constraints.txt "$BIN/vinospeak-upgrade"
 if command -v cargo >/dev/null; then gui/install.sh </dev/null; else echo "no cargo: skipped the window"; fi
 "#;
 
@@ -377,7 +377,7 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
             )]
         }
         (Id::App(App::Whisper), Package, Install) => vec![s(
-            "need_uv; uv tool install vinowhisper; \"$BIN/vinowhisper-setup\" --gui --yes </dev/null",
+            r#"need_uv; uv tool install --force vinowhisper; rm -f "$BIN/vinowhisper-upgrade"; "$BIN/vinowhisper-setup" --gui --yes </dev/null"#,
         )],
         (Id::App(App::Whisper), Package, Update) => vec![s(
             "need_uv; uv tool upgrade vinowhisper; systemctl --user try-restart vinowhisper-server.service 2>/dev/null || true",
@@ -393,7 +393,9 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
             vec![s(&format!("checkout\n{SPEAK_SOURCE}"))]
         }
         (Id::App(App::Speak), Package, Install) => {
-            vec![s("need_uv; uv tool install --python 3.14 vinospeak")]
+            vec![s(
+                r#"need_uv; uv tool install --force --python 3.14 vinospeak; rm -f "$BIN/vinospeak-upgrade""#,
+            )]
         }
         (Id::App(App::Speak), Package, Update) => vec![s("need_uv; uv tool upgrade vinospeak")],
         (Id::App(App::Speak), _, Uninstall) => vec![s(SPEAK_UNINSTALL)],
