@@ -48,7 +48,7 @@ x86_64 only for the release binaries, same as the apps it installs.
 
 ## The window
 
-Nine cards, three by three: the seven apps, ovfetch and vinoUserInterface. Each has its version, how it's installed (the tag top right), and **Update** or **Install**. Before installing, the switch on the card picks the way in. **Update all** appears once a check finds something. vinoPilot's own version sits next to its name in the header, with **Update vinoPilot to vX** beside it when there's a newer one. The installer's output streams into a panel underneath, with **Stop**. vinoAuthFace installs system-wide, so its actions go through `pkexec` and ask for your password.
+Nine cards, three by three: the seven apps, ovfetch and vinoUserInterface. Each has its version, how it's installed (the tag top right), and **Update** or **Install**. Before installing, the switch on the card picks the way in. **Update all** appears once a check finds something. vinoPilot's own version is a button next to its name in the header: it checks for a newer vinoPilot, turns into **update to vX** when there is one, then **Restart into vX** once that's installed. The ⓘ beside it shows how vinoPilot is installed, its checkout, and where the command, the window and the terminal UI are, with their versions. The installer's output streams into a panel underneath, with **Stop**. vinoAuthFace installs system-wide, so its actions go through `pkexec` and ask for your password.
 
 It follows the desktop's light or dark setting, and drops to one column when three don't fit, like when snapped to half a laptop screen:
 

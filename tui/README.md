@@ -21,6 +21,7 @@ or `pipx install vinopilot`. The command is `vinopilot-tui`, not `vinopilot`: th
 | `i` | Install the selected app; asks which way when there's more than one |
 | `u` | Update it, the way it's installed |
 | `a` | Update everything that has an update, vinoPilot included |
+| `p` | vinoPilot itself, whose version is in the status line: checks for a newer one, then updates to it, then restarts into it |
 | `x` | Uninstall it, after a yes |
 | `s` | Show the shell an action would run, without running it |
 | `r` | Change where source checkouts go |

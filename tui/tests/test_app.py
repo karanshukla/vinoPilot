@@ -184,3 +184,32 @@ async def test_missing_command_quit(no_bin: Path) -> None:
         await pilot.click("#quit")
         await pilot.pause()
     assert app.return_code == 0 or app._exit
+
+
+async def test_vinopilot_is_in_the_status_line_not_the_table(fake_bin: Path) -> None:
+    app = PilotApp()
+    async with app.run_test() as pilot:
+        await settle(app, pilot)
+        assert "vinoPilot" not in [cell(app, row, 0) for row in range(3)]
+        assert app.status_text.startswith("vinoPilot 9.9.9")
+
+
+async def test_p_checks_then_updates_then_restarts(fake_bin: Path, calls) -> None:
+    app = PilotApp()
+    async with app.run_test() as pilot:
+        await settle(app, pilot)
+        await pilot.press("p")
+        await settle(app, pilot)
+        assert ["--json", "check"] in calls()
+        assert app.status_text.startswith("vinoPilot 9.9.9, p updates to v10.0.0")
+        # vinoPilot's own update isn't one of the table's.
+        assert "1 update available" in app.status_text
+
+        await pilot.press("p")
+        await settle(app, pilot)
+        assert ["--json", "update", "vinopilot"] in calls()
+        assert app.status_text.startswith("vinoPilot 10.0.0 installed, p restarts into it")
+
+        await pilot.press("p")
+        await pilot.pause()
+    assert app.restart

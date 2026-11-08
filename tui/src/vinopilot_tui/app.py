@@ -28,6 +28,8 @@ from vinopilot_tui import __version__, cli
 from vinopilot_tui.cli import CommandError, Event, Job, Pilot
 
 CHANNEL_LABEL = {"release": "Release", "source": "Source"}
+# The command's own component: in the status line, not the table.
+SELF = "vinopilot"
 ACTIONS = ["install", "update", "uninstall"]
 
 
@@ -201,6 +203,7 @@ class PilotApp(App[None]):
         Binding("i", "install", "Install"),
         Binding("u", "update", "Update"),
         Binding("a", "update_all", "Update all"),
+        Binding("p", "pilot", "vinoPilot"),
         Binding("x", "uninstall", "Uninstall"),
         Binding("s", "steps", "Steps"),
         Binding("r", "source_root", "Source folder"),
@@ -213,6 +216,10 @@ class PilotApp(App[None]):
         self.pilot: Pilot | None = None
         self.version = ""
         self.components: list[dict] = []
+        self.me: dict = {}
+        # vinoPilot updated itself; p restarts into the new one.
+        self.updated = False
+        self.restart = False
         self.checked = False
         self.scanning = False
         self.job: Job | None = None
@@ -272,7 +279,9 @@ class PilotApp(App[None]):
             self.set_status()
 
     def show(self, doc: dict, online: bool) -> None:
-        self.components = list(doc.get("components", []))
+        everything = list(doc.get("components", []))
+        self.me = next((c for c in everything if c["id"] == SELF), {})
+        self.components = [c for c in everything if c["id"] != SELF]
         self.checked = self.checked or online
         self.source_root = str(doc.get("source_root", ""))
         table = self.query_one(DataTable)
@@ -306,7 +315,7 @@ class PilotApp(App[None]):
         return (c["name"], version, via, state, about(c))
 
     def set_status(self, busy: str = "") -> None:
-        parts = [f"vinoPilot {self.version}" if self.version else "vinoPilot"]
+        parts = [self.self_status()]
         if getattr(self, "source_root", ""):
             parts.append(f"source folder {tilde(self.source_root)}")
         if busy:
@@ -320,6 +329,19 @@ class PilotApp(App[None]):
             )
         self.status_text = " · ".join(parts)
         self.query_one("#status", Static).update(self.status_text)
+
+    def self_status(self) -> str:
+        """vinoPilot's version, and what p does with it."""
+        mine = f"vinoPilot {self.version}" if self.version else "vinoPilot"
+        installed = (self.me.get("installed") or {}).get("version")
+        if self.updated and installed and installed != self.version:
+            return f"vinoPilot {installed} installed, p restarts into it"
+        update = self.me.get("update") or {}
+        if update.get("state") == "available" and self.me.get("installed"):
+            return f"{mine}, p updates to {update['to']}"
+        if update.get("state") == "up_to_date":
+            return f"{mine} (up to date)"
+        return mine
 
     def selected(self) -> dict | None:
         table = self.query_one(DataTable)
@@ -373,6 +395,21 @@ class PilotApp(App[None]):
             self.notify(f"{c['name']} isn't installed; use Install", severity="warning")
             return
         self.run_job(self.pilot.update(c["id"]))
+
+    def action_pilot(self) -> None:
+        """vinoPilot itself: check, then update, then restart."""
+        installed = (self.me.get("installed") or {}).get("version")
+        if self.updated and installed and installed != self.version and self.job is None:
+            self.restart = True
+            self.exit()
+            return
+        if not self.ready():
+            return
+        update = self.me.get("update") or {}
+        if update.get("state") == "available" and self.me.get("installed"):
+            self.run_job(self.pilot.update(SELF))
+        else:
+            self.scan(True)
 
     def action_update_all(self) -> None:
         if self.ready():
@@ -468,6 +505,8 @@ class PilotApp(App[None]):
         what = f" {event.app}" if event.app else ""
         if event.outcome == "done":
             self.log_line(f"✓ Done{what}")
+            if event.app == SELF:
+                self.updated = True
         elif event.outcome == "stopped":
             self.log_line(f"Stopped{what}")
         else:
@@ -481,7 +520,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="vinopilot-tui", description=__doc__.splitlines()[0])
     parser.add_argument("--version", action="version", version=f"vinopilot-tui {__version__}")
     parser.parse_args()
-    PilotApp().run()
+    app = PilotApp()
+    app.run()
+    if app.restart:
+        # The update replaced this script too; start the new one in its place.
+        os.execvp("vinopilot-tui", ["vinopilot-tui"])
 
 
 if __name__ == "__main__":

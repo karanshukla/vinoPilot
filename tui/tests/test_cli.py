@@ -29,10 +29,11 @@ def test_documents(fake_bin: Path, calls) -> None:
     pilot = Pilot(str(fake_bin))
     assert pilot.version() == "9.9.9"
     doc = pilot.list()
-    assert [c["id"] for c in doc["components"]] == ["vinowhisper", "vinowatch", "ovfetch"]
+    ids = [c["id"] for c in doc["components"]]
+    assert ids == ["vinopilot", "vinowhisper", "vinowatch", "ovfetch"]
     assert "latest" not in doc["components"][0]
     checked = pilot.check()
-    assert checked["components"][0]["update"] == {"state": "available", "to": "3 commits"}
+    assert checked["components"][1]["update"] == {"state": "available", "to": "3 commits"}
     assert pilot.source_root() == "/home/someone/src"
     assert "release_run" in pilot.steps("vinowatch", "install")
     assert [c[:2] for c in calls()] == [
