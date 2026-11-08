@@ -1,6 +1,6 @@
 """A `vinopilot` that answers with canned JSON and logs what it was asked.
 
-Just enough of docs/json-api.md for the tests: three components, one per
+Just enough of docs/json-api.md for the tests: vinoPilot, then three components, one per
 state, and actions that print line events then done.
 """
 
@@ -8,10 +8,27 @@ import json
 import os
 import sys
 
+# What `update vinopilot` leaves installed: the next `list` reports it.
+UPDATED = os.environ.get("FAKE_VINOPILOT_UPDATED", "")
+INSTALLED = "10.0.0" if UPDATED and os.path.exists(UPDATED) else "9.9.9"
+
 DOC = {
     "vinopilot": "9.9.9",
     "source_root": "/home/someone/src",
     "components": [
+        {
+            "id": "vinopilot",
+            "name": "vinoPilot",
+            "blurb": "Installs and updates the vinoPilot apps",
+            "repo": "karanshukla/vinopilot",
+            "channels": ["release", "source", "package"],
+            "registry": "crates.io",
+            "needs_root": False,
+            "installed": {"channel": "release", "version": INSTALLED},
+            "checkout": None,
+            "shadowed": [],
+            "update": {"state": "unknown", "reason": None},
+        },
         {
             "id": "vinowhisper",
             "name": "vinoWhisper",
@@ -61,6 +78,12 @@ DOC = {
 }
 
 CHECKED = {
+    "vinopilot": (
+        {"release": {"value": "v10.0.0"}, "package": None, "behind": None},
+        {"state": "available", "to": "v10.0.0"}
+        if INSTALLED == "9.9.9"
+        else {"state": "up_to_date"},
+    ),
     "vinowhisper": (
         {"release": {"value": "v1.3.1"}, "package": {"value": "1.3.1"}, "behind": {"value": 3}},
         {"state": "available", "to": "3 commits"},
@@ -112,6 +135,8 @@ def main() -> int:
             return 2
         for text in ("== Downloading", "checksum verified"):
             print(json.dumps({"event": "line", "text": text}), flush=True)
+        if command == "update" and app == "vinopilot" and UPDATED:
+            open(UPDATED, "w").close()
         if app == "vinofail":
             result = {"outcome": "failed", "reason": "the installer said no"}
         else:

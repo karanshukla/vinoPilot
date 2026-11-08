@@ -22,6 +22,7 @@ def fake_bin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     binary = write_fake(tmp_path / "vinopilot")
     monkeypatch.setenv("VINOPILOT_BIN", str(binary))
     monkeypatch.setenv("FAKE_VINOPILOT_LOG", str(tmp_path / "calls.log"))
+    monkeypatch.setenv("FAKE_VINOPILOT_UPDATED", str(tmp_path / "updated"))
     return binary
 
 
