@@ -22,6 +22,7 @@ DOC = {
             "needs_root": False,
             "installed": {"channel": "source", "version": "1.3.0"},
             "checkout": {"path": "/home/someone/src/vinoWhisper", "describe": "v1.3.0-3-gabc"},
+            "shadowed": [],
             "update": {"state": "unknown", "reason": None},
         },
         {
@@ -34,6 +35,7 @@ DOC = {
             "needs_root": False,
             "installed": None,
             "checkout": None,
+            "shadowed": [],
             "update": {"state": "unknown", "reason": None},
         },
         {
@@ -46,6 +48,13 @@ DOC = {
             "needs_root": False,
             "installed": {"channel": "package", "version": "1.0.0"},
             "checkout": None,
+            "shadowed": [
+                {
+                    "command": "ovfetch",
+                    "runs": "/home/someone/.cargo/bin/ovfetch",
+                    "hidden": "/home/someone/.local/bin/ovfetch",
+                }
+            ],
             "update": {"state": "unknown", "reason": None},
         },
     ],

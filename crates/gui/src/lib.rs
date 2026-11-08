@@ -347,6 +347,14 @@ impl Pilot {
                                 "Installs system-wide, so it asks for your password",
                             );
                         }
+                        if let Some(s) = local.shadowed.first() {
+                            widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
+                                "{} runs; {} is another install it hides.\n\
+                                 Uninstall and reinstall to keep one.",
+                                tilde(&s.runs),
+                                tilde(&s.hidden)
+                            ));
+                        }
                         if let Some(system) = &local.system_package
                             && distro_tag(ui, system, copied_now)
                         {
