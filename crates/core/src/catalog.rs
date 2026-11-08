@@ -481,7 +481,11 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         )],
 
         // ovfetch: a bare binary in the release, a bin crate on crates.io.
-        (Id::Ovfetch, Release, Install | Update) => vec![s(OVFETCH_RELEASE)],
+        // Each install drops the other channel's copy, which would otherwise
+        // shadow it or be what detection finds.
+        (Id::Ovfetch, Release, Install | Update) => {
+            vec![s(&format!("{OVFETCH_RELEASE}drop_cargo_copies ovfetch\n"))]
+        }
         (Id::Ovfetch, Release, Uninstall) => {
             vec![s(
                 r#"rm -f "$BIN/ovfetch"; echo "Removed $BIN/ovfetch"; drop_cargo_copies ovfetch"#,
@@ -489,11 +493,13 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         }
         (Id::Ovfetch, Source, Install | Update) => {
             vec![s(
-                r#"checkout; need_cargo; cargo install --locked --force --path "$CHECKOUT""#,
+                r#"checkout; need_cargo; cargo install --locked --force --path "$CHECKOUT"; rm -f "$BIN/ovfetch""#,
             )]
         }
         (Id::Ovfetch, Package, Install | Update) => {
-            vec![s("need_cargo; cargo install --locked ovfetch")]
+            vec![s(
+                r#"need_cargo; cargo install --locked --force ovfetch; rm -f "$BIN/ovfetch""#,
+            )]
         }
         (Id::Ovfetch, Source | Package, Uninstall) => {
             vec![s(r#"drop_cargo_copies ovfetch; rm -f "$BIN/ovfetch""#)]
@@ -501,14 +507,15 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
 
         // vinoPilot: its install.sh builds from a checkout when run from one.
         (Id::Pilot, Release, Install | Update) => vec![s(
-            r#"if [ -x "$BIN/vinopilot-upgrade" ]; then bash "$BIN/vinopilot-upgrade" </dev/null; else release_run install.sh; fi"#,
+            r#"if [ -x "$BIN/vinopilot-upgrade" ]; then bash "$BIN/vinopilot-upgrade" </dev/null; else release_run install.sh; fi
+drop_cargo_copies vinopilot vinopilot-gui"#,
         )],
         (Id::Pilot, Release, Uninstall) => vec![s(
             "release_run install.sh --uninstall; drop_cargo_copies vinopilot vinopilot-gui",
         )],
         (Id::Pilot, Source, Install | Update) => {
             vec![s(
-                r#"checkout; need_cargo; bash "$CHECKOUT/install.sh" </dev/null"#,
+                r#"checkout; need_cargo; bash "$CHECKOUT/install.sh" </dev/null; drop_cargo_copies vinopilot vinopilot-gui"#,
             )]
         }
         (Id::Pilot, Source, Uninstall) => {
@@ -518,7 +525,9 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         }
         (Id::Pilot, Package, Install | Update) => {
             vec![s(
-                "need_cargo; cargo install --locked vinopilot vinopilot-gui",
+                r#"need_cargo; cargo install --locked --force vinopilot vinopilot-gui
+rm -f "$BIN/vinopilot" "$BIN/vinopilot-gui" "$BIN/vinopilot-upgrade"
+"$HOME/.cargo/bin/vinopilot-gui" --install-desktop"#,
             )]
         }
         (Id::Pilot, Package, Uninstall) => vec![s(
@@ -609,6 +618,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn installing_ovfetch_or_vinopilot_drops_the_other_channels_copy() {
+        let script = |id, channel, action| -> String {
+            steps(id, channel, action)
+                .iter()
+                .map(|s| s.script.as_str())
+                .collect()
+        };
+        for (id, bin) in [(Id::Ovfetch, "ovfetch"), (Id::Pilot, "vinopilot")] {
+            for action in [Action::Install, Action::Update] {
+                let release = script(id, Channel::Release, action);
+                assert!(
+                    release.contains(&format!("drop_cargo_copies {bin}")),
+                    "{bin} release {action:?}"
+                );
+                let package = script(id, Channel::Package, action);
+                assert!(
+                    package.contains(&format!("rm -f \"$BIN/{bin}\"")),
+                    "{bin} package {action:?}"
+                );
+            }
+        }
+        assert!(
+            script(Id::Ovfetch, Channel::Source, Action::Install)
+                .contains(r#"rm -f "$BIN/ovfetch""#)
+        );
+        assert!(
+            script(Id::Pilot, Channel::Source, Action::Install)
+                .contains("drop_cargo_copies vinopilot")
+        );
     }
 
     #[test]
