@@ -39,7 +39,7 @@ cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --
 - **pkexec clears the environment.** Root steps get their vars through `pkexec env`, plus `SUDO_USER` so vinoAuthFace's `deploy.sh` builds and finds the desktop user as itself. A pkexec child is root's: `Job::stop` can't kill it.
 - **`core` forbids unsafe**, so no `env::set_var`; that's why `command()` sets `PATH` per child.
 - **The release CLI is static musl, the window is glibc.** eframe dlopens libEGL/wayland/X11, which static musl can't. The window is built on ubuntu-22.04 for an old glibc floor.
-- **vino-user-interface's `Updater` is keyed on its `App` enum**, which has no vinoPilot, so vinoPilot updates itself as a catalog component (`Id::Pilot`) instead.
+- **vinoPilot is `Id::App(App::Pilot)`** (vino-ui's `App` has listed it since 0.4.0), and it updates itself through the catalog's steps like any other component, not vino-ui's `Updater`, so it covers every channel. `repo()` keeps it lowercase (`karanshukla/vinopilot`) to match the release URLs and the checkout folder.
 - **`Pilot::ui` doesn't call `theme::follow_desktop`**; the eframe `App` impl does. Otherwise the screenshot test's light render comes out dark.
 - **The TUI's command can't be `vinopilot`.** `uv tool install` writes scripts to `~/.local/bin`, where the release installer puts the Rust command; a same-named script would replace it.
 - **Nothing goes online until asked.** `list` and the window's startup scan are local; only `check` / Check for updates call `remote`.
