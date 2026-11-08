@@ -352,6 +352,35 @@ fn first(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
 }
 
+/// One of vinoPilot's own commands, found or not.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Part {
+    /// `vinopilot`, `vinopilot-gui` or `vinopilot-tui`.
+    pub command: &'static str,
+    /// In `~/.local/bin` or `~/.cargo/bin`, when it's installed.
+    pub path: Option<PathBuf>,
+    pub version: Option<String>,
+}
+
+/// The command, the window and the terminal UI.
+pub const PARTS: [&str; 3] = ["vinopilot", "vinopilot-gui", "vinopilot-tui"];
+
+/// Which of vinoPilot's commands are installed, where, and at what version.
+pub fn parts(paths: &Paths) -> Vec<Part> {
+    let handles: Vec<_> = PARTS
+        .into_iter()
+        .map(|command| {
+            let path = first(&[paths.local_bin(command), paths.cargo_bin(command)]);
+            std::thread::spawn(move || Part {
+                command,
+                version: path.as_deref().and_then(ask_version),
+                path,
+            })
+        })
+        .collect();
+    handles.into_iter().filter_map(|h| h.join().ok()).collect()
+}
+
 /// What each component looks like on this machine.
 pub fn scan(paths: &Paths) -> HashMap<Id, Local> {
     let crates = std::fs::read_to_string(paths.home.join(".cargo/.crates.toml"))
@@ -613,6 +642,28 @@ mod tests {
             shadowed(&paths, Id::App(search), &cargo_first)[0].runs,
             cargo.join("vinosearch")
         );
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn parts_are_found_with_their_versions() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = std::env::temp_dir().join(format!("vinopilot-parts-{}", std::process::id()));
+        let bin = home.join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let tui = bin.join("vinopilot-tui");
+        std::fs::write(&tui, "#!/bin/sh\necho 'vinopilot-tui 0.2.0'\n").unwrap();
+        std::fs::set_permissions(&tui, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let paths = Paths {
+            home: home.clone(),
+            source_root: home.join("src"),
+            system_bin: home.join("usr/bin"),
+        };
+        let found = parts(&paths);
+        assert_eq!(found.iter().map(|p| p.command).collect::<Vec<_>>(), PARTS);
+        assert_eq!(found[0].path, None);
+        assert_eq!(found[2].path.as_ref(), Some(&tui));
+        assert_eq!(found[2].version.as_deref(), Some("0.2.0"));
         std::fs::remove_dir_all(home).unwrap();
     }
 

@@ -9,7 +9,7 @@ use std::sync::mpsc::{Receiver, channel};
 use eframe::egui::{self, RichText, vec2};
 use vino_ui::{Button, ChipKind, Row, Tone, a11y, theme, widgets};
 use vinopilot_core::catalog::{self, Action, Channel, Id};
-use vinopilot_core::detect::{Installed, Local, Paths, SystemPackage};
+use vinopilot_core::detect::{Installed, Local, Part, Paths, SystemPackage};
 use vinopilot_core::job::{Env, Job, Outcome};
 use vinopilot_core::remote::Latest;
 use vinopilot_core::status::{self, Update};
@@ -41,11 +41,16 @@ const CARDS: [Id; 9] = [
     Id::Ui,
 ];
 
+/// What a local scan finds: each component, and vinoPilot's own commands.
+type Scan = (HashMap<Id, Local>, Vec<Part>);
+
 pub struct Pilot {
     config: Config,
     source_field: String,
     local: HashMap<Id, Local>,
-    scanning: Option<Receiver<HashMap<Id, Local>>>,
+    /// vinoPilot's own commands, for the About popup.
+    parts: Vec<Part>,
+    scanning: Option<Receiver<Scan>>,
     latest: HashMap<Id, Latest>,
     checking: Option<Receiver<HashMap<Id, Latest>>>,
     /// The way each not-installed card will install from.
@@ -77,6 +82,7 @@ impl Pilot {
             source_field: tilde(&config.source_root),
             config,
             local,
+            parts: Vec::new(),
             scanning: None,
             latest,
             checking: None,
@@ -90,6 +96,12 @@ impl Pilot {
         }
     }
 
+    /// The same window, with `parts` as the commands found: for the tests.
+    pub fn with_parts(mut self, parts: Vec<Part>) -> Self {
+        self.parts = parts;
+        self
+    }
+
     fn paths(&self) -> Paths {
         self.config.paths()
     }
@@ -99,7 +111,7 @@ impl Pilot {
         let paths = self.paths();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(detect::scan(&paths));
+            let _ = tx.send((detect::scan(&paths), detect::parts(&paths)));
             ctx.request_repaint();
         });
         self.scanning = Some(rx);
@@ -150,8 +162,9 @@ impl Pilot {
 
     /// Takes whatever the background threads have finished.
     fn poll(&mut self, ctx: &egui::Context) {
-        if let Some(found) = self.scanning.as_ref().and_then(|rx| rx.try_recv().ok()) {
+        if let Some((found, parts)) = self.scanning.as_ref().and_then(|rx| rx.try_recv().ok()) {
             self.local = found;
+            self.parts = parts;
             self.scanning = None;
         }
         if let Some(found) = self.checking.as_ref().and_then(|rx| rx.try_recv().ok()) {
@@ -189,6 +202,7 @@ impl Pilot {
         ui.horizontal(|ui| {
             widgets::title(ui, "vinoPilot");
             self.version_button(ui);
+            self.about_button(ui);
             if ui
                 .add(Button::ghost(vino_ui::family::SITE_LABEL).small())
                 .on_hover_text(vino_ui::family::SITE)
@@ -274,6 +288,93 @@ impl Pilot {
                 }
             }
         }
+    }
+
+    /// ⓘ, always there: a popup with this window's version, how vinoPilot is
+    /// installed, and which of its commands are.
+    fn about_button(&self, ui: &mut egui::Ui) {
+        let info = ui
+            .add(Button::ghost("").icon(vino_ui::Icon::Info).small())
+            .on_hover_text("About vinoPilot");
+        info.ctx.accesskit_node_builder(info.id, |node| {
+            node.set_label("About vinoPilot");
+        });
+        egui::Popup::from_toggle_button_response(&info)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        self.about(ui);
+                    });
+            });
+    }
+
+    fn about(&self, ui: &mut egui::Ui) {
+        let muted = theme::palette(ui.ctx()).muted;
+        let dim = |ui: &mut egui::Ui, text: &str| {
+            ui.add(egui::Label::new(RichText::new(text).color(muted)).extend())
+        };
+        let local = self.local.get(&Id::Pilot).cloned().unwrap_or_default();
+        ui.label(
+            RichText::new(format!("vinoPilot {VERSION}"))
+                .strong()
+                .size(15.0),
+        );
+        widgets::muted(ui, "The version of this window");
+        ui.add_space(6.0);
+        egui::Grid::new("about-vinopilot")
+            .num_columns(2)
+            .spacing(vec2(16.0, 6.0))
+            .show(ui, |ui| {
+                dim(ui, "Installed from");
+                match &local.installed {
+                    Some(i) => {
+                        let label = i.channel.label(Id::Pilot);
+                        match i.version.as_deref() {
+                            Some(v) if v != VERSION => ui.label(format!("{label}, {v}")),
+                            _ => ui.label(label),
+                        };
+                    }
+                    None if self.scanning.is_some() => {
+                        dim(ui, "Looking…");
+                    }
+                    None => {
+                        dim(ui, "Not found in ~/.local/bin or ~/.cargo/bin");
+                    }
+                }
+                ui.end_row();
+                if let Some(c) = &local.checkout {
+                    dim(ui, "Checkout");
+                    ui.label(format!("{} ({})", tilde(&c.path), c.describe));
+                    ui.end_row();
+                }
+                dim(ui, "Updates");
+                match self.update(Id::Pilot) {
+                    _ if self.checking.is_some() => dim(ui, "Checking…"),
+                    Update::Available { to } => ui.label(format!("{to} available")),
+                    Update::UpToDate => ui.label("Up to date"),
+                    Update::Unknown { reason: Some(why) } => dim(ui, &why),
+                    Update::Unknown { reason: None } => dim(ui, "Not checked yet"),
+                };
+                ui.end_row();
+                for part in &self.parts {
+                    dim(ui, part_name(part.command));
+                    match &part.path {
+                        Some(path) => {
+                            let version = part.version.as_deref().unwrap_or("version unknown");
+                            ui.label(format!("{} ({version})", tilde(path)));
+                        }
+                        None if part.command == "vinopilot-tui" => {
+                            dim(ui, "Not installed: uv tool install vinopilot");
+                        }
+                        None => {
+                            dim(ui, "Not installed");
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
     }
 
     /// The version vinoPilot's own update just installed, if it isn't this
@@ -686,6 +787,16 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
     if id == Id::Pilot && version != VERSION {
         shown.on_hover_text(format!("This window is {VERSION}"));
+    }
+}
+
+/// What each of vinoPilot's commands is, for the About popup.
+fn part_name(command: &str) -> &'static str {
+    match command {
+        "vinopilot" => "Command",
+        "vinopilot-gui" => "Window",
+        "vinopilot-tui" => "Terminal UI",
+        _ => "Other",
     }
 }
 
