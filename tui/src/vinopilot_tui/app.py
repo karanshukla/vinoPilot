@@ -45,6 +45,16 @@ def tilde(path: str) -> str:
     return "~" + path[len(home) :] if path.startswith(home) else path
 
 
+def about(c: dict) -> Text:
+    """The blurb, or which copy runs when there are two."""
+    shadowed = c.get("shadowed") or []
+    if not shadowed:
+        return Text(c.get("blurb", ""), style="dim")
+    s = shadowed[0]
+    runs, hidden = tilde(s["runs"]), tilde(s["hidden"])
+    return Text(f"Two copies: {runs} runs, {hidden} doesn't", style="yellow")
+
+
 class ChooseScreen(ModalScreen[str | None]):
     """One of a few options, by id."""
 
@@ -293,7 +303,7 @@ class PilotApp(App[None]):
             state = Text("up to date", style="dim")
         else:
             state = Text(update.get("reason") or "?", style="dim")
-        return (c["name"], version, via, state, Text(c.get("blurb", ""), style="dim"))
+        return (c["name"], version, via, state, about(c))
 
     def set_status(self, busy: str = "") -> None:
         parts = [f"vinoPilot {self.version}" if self.version else "vinoPilot"]

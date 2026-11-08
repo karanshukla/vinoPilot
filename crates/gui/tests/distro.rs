@@ -35,6 +35,7 @@ fn the_distro_tag_copies_the_remove_command() {
                 packages: vec!["vinoopeneffects".into()],
                 remove: REMOVE.into(),
             }),
+            shadowed: vec![],
         },
     )]);
     let config = Config {

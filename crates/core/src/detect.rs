@@ -18,6 +18,19 @@ pub struct Local {
     /// A distro package with the same commands, which vinoPilot can't
     /// remove: an old `rpm`/`deb` build, say.
     pub system_package: Option<SystemPackage>,
+    /// Commands in both `~/.local/bin` and `~/.cargo/bin`: a release install
+    /// and a cargo one side by side, only one of which runs.
+    pub shadowed: Vec<Shadowed>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Shadowed {
+    /// `vinosearch`.
+    pub command: String,
+    /// The copy that comes first on `PATH`, so the one that runs.
+    pub runs: PathBuf,
+    /// The copy it hides.
+    pub hidden: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -199,8 +212,9 @@ fn checkout(paths: &Paths, id: Id) -> Option<Checkout> {
     Some(Checkout { path, describe })
 }
 
-/// The commands a distro package of `id` would put in `/usr/bin`.
-fn system_commands(id: Id) -> &'static [&'static str] {
+/// The commands `id` installs, and a distro package of it would put in
+/// `/usr/bin`.
+fn commands(id: Id) -> &'static [&'static str] {
     match id {
         Id::App(App::Whisper) => &["vinowhisper", "vinowhisper-setup", "vinowhisper-tray"],
         Id::App(App::Speak) => &["vinospeak", "vinospeak-gui"],
@@ -271,7 +285,7 @@ fn remove_command(rpm: bool, packages: &[String]) -> String {
 /// The distro packages that own any of `id`'s commands in `/usr/bin`. Asks
 /// the package manager only when one of them is there.
 fn system_package(paths: &Paths, id: Id) -> Option<SystemPackage> {
-    let files: Vec<PathBuf> = system_commands(id)
+    let files: Vec<PathBuf> = commands(id)
         .iter()
         .map(|c| paths.system_bin.join(c))
         .filter(|p| p.exists())
@@ -306,6 +320,31 @@ fn system_package(paths: &Paths, id: Id) -> Option<SystemPackage> {
         remove: remove_command(rpm, &packages),
         packages,
     })
+}
+
+/// `id`'s commands that are in both `~/.local/bin` and `~/.cargo/bin`, the
+/// one that runs being whichever comes first on `path` (`~/.local/bin` when
+/// neither is on it).
+fn shadowed(paths: &Paths, id: Id, path: &std::ffi::OsStr) -> Vec<Shadowed> {
+    let dirs: Vec<PathBuf> = std::env::split_paths(path).collect();
+    let rank = |dir: &Path| dirs.iter().position(|d| d == dir).unwrap_or(usize::MAX);
+    let (local, cargo) = (paths.home.join(".local/bin"), paths.home.join(".cargo/bin"));
+    let local_first = rank(&local) <= rank(&cargo);
+    commands(id)
+        .iter()
+        .filter_map(|c| {
+            let (l, k) = (local.join(c), cargo.join(c));
+            if !l.exists() || !k.exists() || l.canonicalize().ok() == k.canonicalize().ok() {
+                return None;
+            }
+            let (runs, hidden) = if local_first { (l, k) } else { (k, l) };
+            Some(Shadowed {
+                command: (*c).to_string(),
+                runs,
+                hidden,
+            })
+        })
+        .collect()
 }
 
 /// The first of `candidates` that exists.
@@ -442,6 +481,7 @@ fn local(
         installed,
         checkout,
         system_package: system_package(paths, id),
+        shadowed: shadowed(paths, id, crate::search_path()),
     }
 }
 
@@ -540,6 +580,39 @@ mod tests {
         assert_eq!(channel(&paths), Some(Channel::Source));
         std::fs::write(home.join(".local/bin/ovfetch"), "").unwrap();
         assert_eq!(channel(&paths), Some(Channel::Release));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_command_in_both_bins_is_shadowed_by_the_first_on_path() {
+        let home = std::env::temp_dir().join(format!("vinopilot-shadow-{}", std::process::id()));
+        let (local, cargo) = (home.join(".local/bin"), home.join(".cargo/bin"));
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::create_dir_all(&cargo).unwrap();
+        let paths = Paths {
+            home: home.clone(),
+            source_root: home.join("src"),
+            system_bin: home.join("usr/bin"),
+        };
+        let search = App::Search;
+        std::fs::write(local.join("vinosearch"), "release").unwrap();
+        assert_eq!(shadowed(&paths, Id::App(search), "".as_ref()), vec![]);
+        std::fs::write(cargo.join("vinosearch"), "source").unwrap();
+
+        let local_first = std::env::join_paths([&local, &cargo]).unwrap();
+        assert_eq!(
+            shadowed(&paths, Id::App(search), &local_first),
+            vec![Shadowed {
+                command: "vinosearch".into(),
+                runs: local.join("vinosearch"),
+                hidden: cargo.join("vinosearch"),
+            }]
+        );
+        let cargo_first = std::env::join_paths([&cargo, &local]).unwrap();
+        assert_eq!(
+            shadowed(&paths, Id::App(search), &cargo_first)[0].runs,
+            cargo.join("vinosearch")
+        );
         std::fs::remove_dir_all(home).unwrap();
     }
 

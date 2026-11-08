@@ -27,7 +27,7 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
     cmd
 }
 
-fn search_path() -> &'static std::ffi::OsString {
+pub(crate) fn search_path() -> &'static std::ffi::OsString {
     static PATH: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
     PATH.get_or_init(|| {
         let home = config::home();

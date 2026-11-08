@@ -215,6 +215,14 @@ fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
                 c.name, system.remove
             );
         }
+        for s in &c.local.shadowed {
+            println!(
+                "\n{} is installed twice: {} runs, {} doesn't; uninstall and reinstall it to keep one",
+                c.name,
+                s.runs.display(),
+                s.hidden.display()
+            );
+        }
     }
     Ok(())
 }

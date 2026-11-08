@@ -36,6 +36,11 @@ async def test_lists_components_offline(fake_bin: Path, calls) -> None:
         assert cell(app, 1, 2) == "not installed"
         assert cell(app, 2, 2) == "crates.io"
         assert cell(app, 0, 3) == ""
+        assert cell(app, 0, 4) == "Live captions and voice typing"
+        assert cell(app, 2, 4) == (
+            "Two copies: /home/someone/.cargo/bin/ovfetch runs, "
+            "/home/someone/.local/bin/ovfetch doesn't"
+        )
     assert ["--json", "check"] not in calls()
 
 

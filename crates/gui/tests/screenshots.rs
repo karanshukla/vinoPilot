@@ -37,6 +37,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Release, "1.3.0"),
                 checkout: None,
                 system_package: None,
+                shadowed: vec![],
             },
         ),
         (
@@ -45,6 +46,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Release, "12"),
                 checkout: None,
                 system_package: None,
+                shadowed: vec![],
             },
         ),
         (
@@ -57,6 +59,7 @@ fn demo() -> Pilot {
                     packages: vec!["vinoopeneffects".into()],
                     remove: "sudo dnf remove vinoopeneffects".into(),
                 }),
+                shadowed: vec![],
             },
         ),
         (
@@ -65,6 +68,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Source, "1.4.0"),
                 checkout: checkout("vinoPop", "v1.4.0-13-g2f1c9e0"),
                 system_package: None,
+                shadowed: vec![],
             },
         ),
         (
@@ -73,6 +77,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Package, "0.5.1"),
                 checkout: None,
                 system_package: None,
+                shadowed: vec![],
             },
         ),
         (
@@ -81,6 +86,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Release, "8.0.0"),
                 checkout: None,
                 system_package: None,
+                shadowed: vec![],
             },
         ),
         (
@@ -89,6 +95,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Package, "0.6.0"),
                 checkout: None,
                 system_package: None,
+                shadowed: vec![],
             },
         ),
         (
@@ -97,6 +104,7 @@ fn demo() -> Pilot {
                 installed: installed(Channel::Release, vinopilot_gui::VERSION),
                 checkout: None,
                 system_package: None,
+                shadowed: vec![],
             },
         ),
     ]);
