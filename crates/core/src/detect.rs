@@ -357,7 +357,8 @@ fn first(candidates: &[PathBuf]) -> Option<PathBuf> {
 pub struct Part {
     /// `vinopilot`, `vinopilot-gui` or `vinopilot-tui`.
     pub command: &'static str,
-    /// In `~/.local/bin` or `~/.cargo/bin`, when it's installed.
+    /// In `~/.local/bin`, `~/.cargo/bin` or (a distro package's) `/usr/bin`,
+    /// when it's installed.
     pub path: Option<PathBuf>,
     pub version: Option<String>,
 }
@@ -370,7 +371,11 @@ pub fn parts(paths: &Paths) -> Vec<Part> {
     let handles: Vec<_> = PARTS
         .into_iter()
         .map(|command| {
-            let path = first(&[paths.local_bin(command), paths.cargo_bin(command)]);
+            let path = first(&[
+                paths.local_bin(command),
+                paths.cargo_bin(command),
+                paths.system_bin.join(command),
+            ]);
             std::thread::spawn(move || Part {
                 command,
                 version: path.as_deref().and_then(ask_version),

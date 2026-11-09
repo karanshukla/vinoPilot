@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: shellcheck install.sh tests/*.sh .github/*.sh
+      - run: shellcheck install.sh tests/*.sh .github/*.sh packaging/flatpak/*.sh
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --locked -p vinopilot -p vinopilot-gui
@@ -99,8 +99,50 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # rpmbuild, for the .rpm; dpkg-deb is already there.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
       - run: .github/package-release.sh
-      - name: Smoke-test the tarball
+      - name: Smoke-test the tarball, the .deb and the .rpm
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "vinopilot") | .version')
           tests/release-smoke.sh dist "$version"
+          tests/package-install.sh dist "$version"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build
+          path: dist
+          if-no-files-found: error
+          retention-days: 3
+
+  # release.yml's `flatpak` job, on every PR too: the bundle around the
+  # binaries `release-build` made, installed and run. The artifact is there
+  # to try a PR's packages by hand.
+  flatpak:
+    needs: release-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build
+          path: dist
+      - name: Install Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils dbus-daemon
+          # Ubuntu 24.04 keeps bubblewrap, Flatpak's sandbox, from making its user namespace.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: .github/package-flatpak.sh dist
+      - name: Smoke-test the Flatpak
+        run: |
+          version=$(dpkg-deb -f dist/vinopilot-x86_64.deb Version)
+          tests/flatpak-smoke.sh dist "$version"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 3

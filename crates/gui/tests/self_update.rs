@@ -8,7 +8,7 @@ use egui_kittest::kittest::Queryable;
 use vino_ui::{App, theme};
 use vinopilot_core::Config;
 use vinopilot_core::catalog::{Channel, Id};
-use vinopilot_core::detect::{Installed, Local, Part};
+use vinopilot_core::detect::{Installed, Local, Part, SystemPackage};
 use vinopilot_core::remote::Latest;
 use vinopilot_gui::{Pilot, VERSION};
 
@@ -17,16 +17,22 @@ fn header(latest: HashMap<Id, Latest>) -> Harness<'static, (Pilot, bool)> {
 }
 
 fn header_with(latest: HashMap<Id, Latest>, parts: Vec<Part>) -> Harness<'static, (Pilot, bool)> {
-    let local = HashMap::from([(
-        Id::App(App::Pilot),
-        Local {
-            installed: Some(Installed {
-                channel: Channel::Release,
-                version: Some(VERSION.into()),
-            }),
-            ..Default::default()
-        },
-    )]);
+    let local = Local {
+        installed: Some(Installed {
+            channel: Channel::Release,
+            version: Some(VERSION.into()),
+        }),
+        ..Default::default()
+    };
+    window(local, latest, parts)
+}
+
+fn window(
+    local: Local,
+    latest: HashMap<Id, Latest>,
+    parts: Vec<Part>,
+) -> Harness<'static, (Pilot, bool)> {
+    let local = HashMap::from([(Id::App(App::Pilot), local)]);
     let config = Config {
         source_root: "/nowhere".into(),
     };
@@ -95,4 +101,26 @@ fn about_shows_how_vinopilot_and_its_commands_are_installed() {
     h.get_by_label("Not checked yet");
     h.get_by_label(&format!("/nowhere/.local/bin/vinopilot-gui ({VERSION})"));
     h.get_by_label("Not installed: uv tool install vinopilot");
+}
+
+#[test]
+fn about_names_the_distro_package_vinopilot_came_in() {
+    let local = Local {
+        system_package: Some(SystemPackage {
+            kind: "deb",
+            packages: vec!["vinopilot".into()],
+            remove: "sudo apt remove vinopilot".into(),
+        }),
+        ..Default::default()
+    };
+    let parts = vec![Part {
+        command: "vinopilot-gui",
+        path: Some("/usr/bin/vinopilot-gui".into()),
+        version: Some(VERSION.to_string()),
+    }];
+    let mut h = window(local, HashMap::new(), parts);
+    h.get_by_label("About vinoPilot").click();
+    h.run();
+    h.get_by_label("the deb package");
+    h.get_by_label(&format!("/usr/bin/vinopilot-gui ({VERSION})"));
 }

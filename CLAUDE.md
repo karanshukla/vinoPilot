@@ -20,6 +20,7 @@ A cargo workspace plus a Python package beside it. Keep repo-level tooling langu
 - `crates/cli` (`vinopilot`): hand-rolled args, `--json` is the API (docs/json-api.md, pinned by tests/cli.rs).
 - `tui/` (`vinopilot` on PyPI, command `vinopilot-tui`): Textual. `cli.py` is the only thing that runs the command (`--json`, docs/json-api.md); `app.py` is the table, the log and the modal screens. It knows no catalog: names, channels, registries and update states all come from the JSON. Tests run against `tests/fake_vinopilot.py`, never cargo; `VINOPILOT_BIN=target/debug/vinopilot` tries it on the real thing.
 - `crates/gui` (`vinopilot-gui`): lib (`Pilot`) + thin main. A 3x3 grid (`CARDS`: seven apps, ovfetch, vinoUserInterface; one column when three don't fit), log panel at the bottom. vinoPilot has no card: its version and self-update are in the header, and Update all skips it.
+- `packaging/`: the .deb's `control`, the .rpm's spec, the Flatpak's manifest and its `host-run.sh`, and the metainfo all three share. `.github/package-distro.sh` and `package-flatpak.sh` wrap the tarball's two binaries with them; nothing is rebuilt. The menu entry and icon come from `vinopilot-gui --install-desktop` into the staging tree, not from a second copy here.
 
 ## Commands
 
@@ -29,6 +30,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 cargo deny check
 cargo build -p vinopilot -p vinopilot-gui && tests/install-e2e.sh target/debug
+.github/package-release.sh && tests/release-smoke.sh dist X.Y.Z   # needs the musl target, dpkg-deb, rpmbuild
 cargo test -p vinopilot-gui --test screenshots -- --ignored   # regenerates docs/images
 cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --frozen ruff format --check .
 ```
@@ -42,10 +44,13 @@ cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --
 - **vinoPilot is `Id::App(App::Pilot)`** (vino-ui's `App` has listed it since 0.4.0), and it updates itself through the catalog's steps like any other component, not vino-ui's `Updater`, so it covers every channel. `repo()` keeps it lowercase (`karanshukla/vinopilot`) to match the release URLs and the checkout folder.
 - **`Pilot::ui` doesn't call `theme::follow_desktop`**; the eframe `App` impl does. Otherwise the screenshot test's light render comes out dark.
 - **The TUI's command can't be `vinopilot`.** `uv tool install` writes scripts to `~/.local/bin`, where the release installer puts the Rust command; a same-named script would replace it.
+- **The Flatpak runs on the host.** `host-run.sh` is `/app/bin/vinopilot{,-gui}` and `flatpak-spawn --host`s the real binary from the app's files (`app-path` in `/.flatpak-info`), because every step needs the host's home, tools and pkexec. So core has no Flatpak mode, and `org.freedesktop.Flatpak` is the bundle's one permission (tests/flatpak-smoke.sh fails on a second).
+- **A package install of vinoPilot isn't a channel.** In `/usr/bin` it shows as `system_package` with `installed: None`, so the header offers no self-update; the window's `packaged()` names the deb, rpm or Flatpak instead. The packages have no repository behind them.
+- **Release asset names are unversioned** (`vinopilot-x86_64.deb`), so `releases/latest/download/<name>` keeps working. A new asset goes in `SHA256SUMS`, `attest`'s subjects and `publish`'s list.
 - **Nothing goes online until asked.** `list` and the window's startup scan are local; only `check` / Check for updates call `remote`.
 
 ## CI and repo rules
 
 - Actions pinned to commit SHAs with a version comment; Dependabot with a 7-day cooldown, nothing auto-merges.
 - Conventional commits; CHANGELOG.md from `git cliff`. A release tag needs a matching `## [x.y.z]` section and every crate at that version.
-- Releases: build (no write token), attest, publish, then crates.io by trusted publishing behind the `crates-io` environment's approval, core first.
+- Releases: build (no write token; tarball, .deb, .rpm), flatpak (the bundle, on ubuntu-24.04), attest, publish, then crates.io by trusted publishing behind the `crates-io` environment's approval, core first.

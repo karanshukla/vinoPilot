@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- What a software centre shows for the deb, the rpm and the Flatpak. -->
+<component type="desktop-application">
+  <id>io.github.karanshukla.vinopilot</id>
+  <name>vinoPilot</name>
+  <summary>Install, update and uninstall the vinoPilot apps</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.karanshukla">
+    <name>Karan Shukla</name>
+  </developer>
+  <description>
+    <p>
+      One place to install, update and uninstall the vinoPilot apps: vinoWhisper,
+      vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch and
+      ovfetch. Each app has its own hash-checked installer; vinoPilot knows which
+      one to run, how each app got onto your machine, and whether there is
+      something newer for that way in.
+    </p>
+    <p>
+      Nothing goes online until you press Check for updates.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.karanshukla.vinopilot.desktop</launchable>
+  <url type="homepage">https://vinopilot.ca/</url>
+  <url type="bugtracker">https://github.com/karanshukla/vinopilot/issues</url>
+  <url type="vcs-browser">https://github.com/karanshukla/vinopilot</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The window: a card per app, with its version and how it was installed</caption>
+      <image>https://raw.githubusercontent.com/karanshukla/vinopilot/main/docs/images/window-dark.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Settings</category>
+    <category>PackageManager</category>
+  </categories>
+  <provides>
+    <binary>vinopilot</binary>
+    <binary>vinopilot-gui</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

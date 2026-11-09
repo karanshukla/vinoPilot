@@ -65,12 +65,15 @@ pub struct Pilot {
     focused: bool,
     /// The card whose remove command was just copied, and when.
     copied: Option<(Id, f64)>,
+    /// This window is the Flatpak's, started from where Flatpak keeps it.
+    flatpak: bool,
 }
 
 impl Pilot {
     /// The window for this machine: starts the local scan.
     pub fn new(ctx: &egui::Context) -> Self {
         let mut pilot = Pilot::with(Config::load(), HashMap::new(), HashMap::new());
+        pilot.flatpak = std::env::current_exe().is_ok_and(|exe| in_flatpak(&exe));
         pilot.rescan(ctx);
         pilot
     }
@@ -93,6 +96,7 @@ impl Pilot {
             queue: Vec::new(),
             focused: false,
             copied: None,
+            flatpak: false,
         }
     }
 
@@ -256,15 +260,16 @@ impl Pilot {
             );
             return;
         }
-        let how = installed.as_ref().map_or_else(
-            || "This window isn't an installed vinoPilot".to_string(),
-            |i| {
-                format!(
-                    "Installed from {}",
-                    i.channel.label(Id::App(vino_ui::App::Pilot))
-                )
-            },
-        );
+        let how = match (&installed, self.packaged()) {
+            (Some(i), _) => format!(
+                "Installed from {}",
+                i.channel.label(Id::App(vino_ui::App::Pilot))
+            ),
+            (None, Some(package)) => {
+                format!("Installed from {package}, which is updated the way it was installed")
+            }
+            (None, None) => "This window isn't an installed vinoPilot".to_string(),
+        };
         match (self.update(Id::App(vino_ui::App::Pilot)), installed) {
             (Update::Available { to }, Some(installed)) => {
                 if ui
@@ -357,7 +362,10 @@ impl Pilot {
                         dim(ui, "Looking…");
                     }
                     None => {
-                        dim(ui, "Not found in ~/.local/bin or ~/.cargo/bin");
+                        match self.packaged() {
+                            Some(package) => ui.label(package),
+                            None => dim(ui, "Not found in ~/.local/bin or ~/.cargo/bin"),
+                        };
                     }
                 }
                 ui.end_row();
@@ -392,6 +400,21 @@ impl Pilot {
                     ui.end_row();
                 }
             });
+    }
+
+    /// The package this window came in, when it isn't one of the catalog's
+    /// installs: `the deb package`, `the rpm package`, `the Flatpak`. Those
+    /// update the way they were installed, not from the header.
+    fn packaged(&self) -> Option<String> {
+        if self.flatpak {
+            return Some("the Flatpak".into());
+        }
+        let system = self
+            .local
+            .get(&Id::App(vino_ui::App::Pilot))?
+            .system_package
+            .as_ref()?;
+        Some(format!("the {} package", system.kind))
     }
 
     /// The version vinoPilot's own update just installed, if it isn't this
@@ -808,6 +831,14 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     }
 }
 
+/// Whether `exe` is in a Flatpak's files: `<installation>/app/<id>/<arch>/
+/// <branch>/<commit>/files/libexec/vinopilot/vinopilot-gui`, where
+/// packaging/flatpak/host-run.sh starts it on the host.
+fn in_flatpak(exe: &std::path::Path) -> bool {
+    let mut parts = exe.components().map(|c| c.as_os_str());
+    parts.any(|c| c == "app") && parts.next().is_some_and(|c| c == desktop::APP_ID)
+}
+
 /// What each of vinoPilot's commands is, for the About popup.
 fn part_name(command: &str) -> &'static str {
     match command {
@@ -844,5 +875,24 @@ impl eframe::App for Pilot {
         }
         self.focused = focused;
         Pilot::ui(self, ui);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn a_flatpak_is_told_by_where_its_binary_is() {
+        for dir in ["/var/lib/flatpak", "/home/k/.local/share/flatpak"] {
+            let exe = format!(
+                "{dir}/app/{}/x86_64/master/0a1b/files/libexec/vinopilot/vinopilot-gui",
+                desktop::APP_ID
+            );
+            assert!(in_flatpak(Path::new(&exe)), "{exe}");
+        }
+        assert!(!in_flatpak(Path::new("/usr/bin/vinopilot-gui")));
+        assert!(!in_flatpak(Path::new("/home/k/app/vinopilot-gui")));
     }
 }
