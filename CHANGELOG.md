@@ -5,6 +5,18 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-09
+
+### Features
+
+- A .deb, an .rpm and a Flatpak bundle on every release, holding the same two binaries as the tarball. The Flatpak's commands run on the host, its only permission being `org.freedesktop.Flatpak`
+- vinoPilot updates and uninstalls itself as the .deb, .rpm or Flatpak it came in: it fetches the release's file, checks it against `SHA256SUMS` and hands it to apt, dnf, zypper or flatpak
+- The About popup and the version button name the package vinoPilot came in
+
+### Changed
+
+- **Breaking, `vinopilot-core`:** `Channel` has `Deb`, `Rpm` and `Flatpak`, for vinoPilot's own install. In `--json`, `installed.channel` can be `deb`, `rpm` or `flatpak` for vinopilot
+
 ## [0.2.0] - 2026-11-08
 
 ### Features
