@@ -65,12 +65,16 @@ pub struct Pilot {
     focused: bool,
     /// The card whose remove command was just copied, and when.
     copied: Option<(Id, f64)>,
+    /// This window is the Flatpak's, started from where Flatpak keeps it:
+    /// it restarts through `flatpak run`, having no command on `PATH`.
+    flatpak: bool,
 }
 
 impl Pilot {
     /// The window for this machine: starts the local scan.
     pub fn new(ctx: &egui::Context) -> Self {
         let mut pilot = Pilot::with(Config::load(), HashMap::new(), HashMap::new());
+        pilot.flatpak = std::env::current_exe().is_ok_and(|exe| in_flatpak(&exe));
         pilot.rescan(ctx);
         pilot
     }
@@ -93,6 +97,7 @@ impl Pilot {
             queue: Vec::new(),
             focused: false,
             copied: None,
+            flatpak: false,
         }
     }
 
@@ -245,7 +250,7 @@ impl Pilot {
                 ))
                 .clicked()
             {
-                restart(&ctx);
+                restart(&ctx, self.flatpak);
             }
             return;
         }
@@ -357,7 +362,7 @@ impl Pilot {
                         dim(ui, "Looking…");
                     }
                     None => {
-                        dim(ui, "Not found in ~/.local/bin or ~/.cargo/bin");
+                        dim(ui, "Not found in ~/.local/bin, ~/.cargo/bin or a package");
                     }
                 }
                 ui.end_row();
@@ -808,6 +813,14 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     }
 }
 
+/// Whether `exe` is in a Flatpak's files: `<installation>/app/<id>/<arch>/
+/// <branch>/<commit>/files/libexec/vinopilot/vinopilot-gui`, where
+/// packaging/flatpak/host-run.sh starts it on the host.
+fn in_flatpak(exe: &std::path::Path) -> bool {
+    let mut parts = exe.components().map(|c| c.as_os_str());
+    parts.any(|c| c == "app") && parts.next().is_some_and(|c| c == desktop::APP_ID)
+}
+
 /// What each of vinoPilot's commands is, for the About popup.
 fn part_name(command: &str) -> &'static str {
     match command {
@@ -819,8 +832,15 @@ fn part_name(command: &str) -> &'static str {
 }
 
 /// Starts the installed window and closes this one.
-fn restart(ctx: &egui::Context) {
-    match vinopilot_core::command("vinopilot-gui").spawn() {
+fn restart(ctx: &egui::Context, flatpak: bool) {
+    let mut new = if flatpak {
+        let mut run = vinopilot_core::command("flatpak");
+        run.args(["run", desktop::APP_ID]);
+        run
+    } else {
+        vinopilot_core::command("vinopilot-gui")
+    };
+    match new.spawn() {
         Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         Err(e) => eprintln!("vinopilot: couldn't start the new vinopilot-gui: {e}"),
     }
@@ -844,5 +864,24 @@ impl eframe::App for Pilot {
         }
         self.focused = focused;
         Pilot::ui(self, ui);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn a_flatpak_is_told_by_where_its_binary_is() {
+        for dir in ["/var/lib/flatpak", "/home/k/.local/share/flatpak"] {
+            let exe = format!(
+                "{dir}/app/{}/x86_64/master/0a1b/files/libexec/vinopilot/vinopilot-gui",
+                desktop::APP_ID
+            );
+            assert!(in_flatpak(Path::new(&exe)), "{exe}");
+        }
+        assert!(!in_flatpak(Path::new("/usr/bin/vinopilot-gui")));
+        assert!(!in_flatpak(Path::new("/home/k/app/vinopilot-gui")));
     }
 }

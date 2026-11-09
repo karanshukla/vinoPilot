@@ -1,0 +1,20 @@
+Package: vinopilot
+Version: @VERSION@
+Architecture: amd64
+Maintainer: Karan Shukla <karanshukla@users.noreply.github.com>
+Installed-Size: @SIZE@
+Section: utils
+Priority: optional
+Homepage: https://vinopilot.ca/
+Depends: libc6 (>= 2.35), libgcc-s1, bash, curl, ca-certificates, tar, libegl1, libxkbcommon0, libwayland-client0, libwayland-egl1, libx11-6, libxcursor1, libxi6, libxkbcommon-x11-0
+Recommends: git, pkexec | policykit-1
+Description: Install, update and uninstall the vinoPilot apps
+ One place to install, update and uninstall the vinoPilot apps: vinoWhisper,
+ vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch and
+ ovfetch. Each app has its own hash-checked installer; vinoPilot knows which
+ one to run, how each app got onto your machine, and whether there is
+ something newer for that way in.
+ .
+ This package has the vinopilot command and the vinopilot-gui window. The
+ apps themselves still install into your home, each through its own
+ installer.

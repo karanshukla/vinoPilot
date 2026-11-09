@@ -27,7 +27,14 @@ from textual.widgets.option_list import Option
 from vinopilot_tui import __version__, cli
 from vinopilot_tui.cli import CommandError, Event, Job, Pilot
 
-CHANNEL_LABEL = {"release": "Release", "source": "Source"}
+CHANNEL_LABEL = {
+    "release": "Release",
+    "source": "Source",
+    # vinopilot's own release, as a package.
+    "deb": "deb package",
+    "rpm": "rpm package",
+    "flatpak": "Flatpak",
+}
 # The command's own component: in the status line, not the table.
 SELF = "vinopilot"
 ACTIONS = ["install", "update", "uninstall"]

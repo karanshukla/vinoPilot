@@ -1,0 +1,36 @@
+# The Flatpak bundle a release attaches. .github/package-flatpak.sh builds it
+# in a scratch copy of this folder, with the release's prebuilt binaries
+# unpacked into ./src and the metainfo beside it: nothing compiles
+# here, so the bundle carries the same bytes as the tarball.
+app-id: io.github.karanshukla.vinopilot
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+command: vinopilot-gui
+finish-args:
+  # The only permission, and all of them: host-run.sh starts the window on
+  # the host, where the apps it manages get installed.
+  - --talk-name=org.freedesktop.Flatpak
+modules:
+  - name: vinopilot
+    buildsystem: simple
+    # Leave the binaries as they came: no debuginfo split out of them.
+    build-options:
+      no-debuginfo: true
+    build-commands:
+      - install -Dm755 -t /app/libexec/vinopilot vinopilot vinopilot-gui
+      - install -Dm755 host-run.sh /app/bin/vinopilot
+      - ln -s vinopilot /app/bin/vinopilot-gui
+      # The binary writes its own menu entry and icon, as for every other install.
+      - XDG_DATA_HOME=/app/share ./vinopilot-gui --install-desktop
+      - sed -i 's|^Exec=.*|Exec=vinopilot-gui|' /app/share/applications/io.github.karanshukla.vinopilot.desktop
+      - rm -f /app/share/applications/mimeinfo.cache
+      - install -Dm644 -t /app/share/metainfo io.github.karanshukla.vinopilot.metainfo.xml
+      - install -Dm644 -t /app/share/licenses/vinopilot LICENSE
+    sources:
+      - type: dir
+        path: src
+      - type: file
+        path: host-run.sh
+      - type: file
+        path: io.github.karanshukla.vinopilot.metainfo.xml

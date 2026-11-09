@@ -35,6 +35,20 @@ curl -fsSL https://github.com/karanshukla/vinopilot/releases/latest/download/ins
 
 This puts `vinopilot` (the command) and `vinopilot-gui` (the window) in `~/.local/bin` and adds vinoPilot to your app menu. No sudo. `| bash -s -- --no-gui` skips the window; `| bash -s -- --uninstall` removes it all.
 
+Or as a package, from the [latest release](https://github.com/karanshukla/vinopilot/releases/latest). Each holds the same two binaries as the installer's tarball, system-wide, with the app menu entry:
+
+```sh
+curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.deb
+sudo apt install ./vinopilot-x86_64.deb          # Debian, Ubuntu, Mint
+
+sudo dnf install https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.rpm   # Fedora
+
+curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.flatpak
+flatpak install --user ./vinopilot-x86_64.flatpak
+```
+
+vinoPilot updates itself the way it was installed: the version button in the header (or `vinopilot update vinopilot`) downloads the new release's .deb, .rpm or Flatpak, checks it against the release's `SHA256SUMS`, and hands it to `apt`, `dnf` or `flatpak`. The .deb and .rpm ask for your password for that one command. There's no apt, dnf or Flatpak repository behind them, so your system's own updater doesn't see new versions, and on an rpm-ostree system (Silverblue, Bazzite) use the Flatpak or the installer above. The Flatpak isn't sandboxed and doesn't install Flatpaks: vinoPilot installs apps on your system with your own `bash`, `git`, `uv`, `cargo` and `pkexec`, so its only permission is the one to run on the host (`org.freedesktop.Flatpak`), and the window and `flatpak run --command=vinopilot io.github.karanshukla.vinopilot` run there. The apps it installs go into your home through their own installers, as with every other way in.
+
 From crates.io, or a checkout:
 
 ```sh
@@ -80,6 +94,7 @@ App names work with or without the `vino`. `--via` takes `release` (the default)
 | `crates/cli` | `vinopilot`: the command, and the `--json` API |
 | `crates/gui` | `vinopilot-gui`: the egui window, drawn with [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) |
 | `install.sh` | the one-line installer, and the source install from a checkout |
+| `packaging/` | what the .deb, the .rpm and the Flatpak add around the release's binaries |
 
 | `tui/` | `vinopilot-tui`: the same in a terminal, from PyPI (`uv tool install vinopilot`). A thin [Textual](https://textual.textualize.io/) frontend over `vinopilot --json`; it offers to fetch the command when it isn't there. Updating or uninstalling vinoPilot takes it along. |
 

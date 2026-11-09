@@ -64,6 +64,8 @@ pub struct Paths {
     pub source_root: PathBuf,
     /// `/usr/bin`, where a distro package puts its commands.
     pub system_bin: PathBuf,
+    /// `/var/lib/flatpak`, the system-wide Flatpak installation.
+    pub system_flatpak: PathBuf,
 }
 
 impl Paths {
@@ -347,6 +349,39 @@ fn shadowed(paths: &Paths, id: Id, path: &std::ffi::OsStr) -> Vec<Shadowed> {
         .collect()
 }
 
+/// vinoPilot's `vinopilot` in its Flatpak, the user's installation before
+/// the system's: `<installation>/app/<id>/current/active/files/libexec/...`,
+/// where packaging/flatpak puts the real binaries.
+fn flatpak_command(paths: &Paths) -> Option<PathBuf> {
+    let inside = Path::new("app")
+        .join(crate::catalog::PILOT_APP_ID)
+        .join("current/active/files/libexec/vinopilot/vinopilot");
+    first(&[
+        paths.home.join(".local/share/flatpak").join(&inside),
+        paths.system_flatpak.join(&inside),
+    ])
+}
+
+/// vinoPilot installed as one of its release's packages: the `.deb` or
+/// `.rpm` that owns `/usr/bin/vinopilot`, else its Flatpak.
+fn packaged(paths: &Paths, system: Option<&SystemPackage>) -> Option<Installed> {
+    let (channel, bin) = match system {
+        Some(system) => {
+            let channel = if system.kind == "rpm" {
+                Channel::Rpm
+            } else {
+                Channel::Deb
+            };
+            (channel, paths.system_bin.join("vinopilot"))
+        }
+        None => (Channel::Flatpak, flatpak_command(paths)?),
+    };
+    Some(Installed {
+        channel,
+        version: ask_version(&bin),
+    })
+}
+
 /// The first of `candidates` that exists.
 fn first(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
@@ -357,7 +392,8 @@ fn first(candidates: &[PathBuf]) -> Option<PathBuf> {
 pub struct Part {
     /// `vinopilot`, `vinopilot-gui` or `vinopilot-tui`.
     pub command: &'static str,
-    /// In `~/.local/bin` or `~/.cargo/bin`, when it's installed.
+    /// In `~/.local/bin`, `~/.cargo/bin` or (a distro package's) `/usr/bin`,
+    /// when it's installed.
     pub path: Option<PathBuf>,
     pub version: Option<String>,
 }
@@ -370,7 +406,11 @@ pub fn parts(paths: &Paths) -> Vec<Part> {
     let handles: Vec<_> = PARTS
         .into_iter()
         .map(|command| {
-            let path = first(&[paths.local_bin(command), paths.cargo_bin(command)]);
+            let path = first(&[
+                paths.local_bin(command),
+                paths.cargo_bin(command),
+                paths.system_bin.join(command),
+            ]);
             std::thread::spawn(move || Part {
                 command,
                 version: path.as_deref().and_then(ask_version),
@@ -506,10 +546,16 @@ fn local(
     } else {
         installed
     };
+    let system_package = system_package(paths, id);
+    // A copy in the home runs first; without one, vinoPilot is its package.
+    let installed = match installed {
+        None if id == Id::App(App::Pilot) => packaged(paths, system_package.as_ref()),
+        installed => installed,
+    };
     Local {
         installed,
         checkout,
-        system_package: system_package(paths, id),
+        system_package,
         shadowed: shadowed(paths, id, crate::search_path()),
     }
 }
@@ -591,6 +637,7 @@ mod tests {
             home: home.clone(),
             source_root: home.join("src"),
             system_bin: home.join("usr/bin"),
+            system_flatpak: home.join("var/lib/flatpak"),
         };
         let crates = HashMap::from([(
             "ovfetch".to_string(),
@@ -622,6 +669,7 @@ mod tests {
             home: home.clone(),
             source_root: home.join("src"),
             system_bin: home.join("usr/bin"),
+            system_flatpak: home.join("var/lib/flatpak"),
         };
         let search = App::Search;
         std::fs::write(local.join("vinosearch"), "release").unwrap();
@@ -658,12 +706,58 @@ mod tests {
             home: home.clone(),
             source_root: home.join("src"),
             system_bin: home.join("usr/bin"),
+            system_flatpak: home.join("var/lib/flatpak"),
         };
         let found = parts(&paths);
         assert_eq!(found.iter().map(|p| p.command).collect::<Vec<_>>(), PARTS);
         assert_eq!(found[0].path, None);
         assert_eq!(found[2].path.as_ref(), Some(&tui));
         assert_eq!(found[2].version.as_deref(), Some("0.2.0"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn vinopilot_is_found_in_its_flatpak_user_before_system() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = std::env::temp_dir().join(format!("vinopilot-flatpak-{}", std::process::id()));
+        let paths = Paths {
+            home: home.clone(),
+            source_root: home.join("src"),
+            system_bin: home.join("usr/bin"),
+            system_flatpak: home.join("var/lib/flatpak"),
+        };
+        let put = |installation: PathBuf, version: &str| {
+            let dir = installation
+                .join("app/io.github.karanshukla.vinopilot/current/active/files/libexec/vinopilot");
+            std::fs::create_dir_all(&dir).unwrap();
+            let bin = dir.join("vinopilot");
+            std::fs::write(&bin, format!("#!/bin/sh\necho 'vinopilot {version}'\n")).unwrap();
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let found = |paths: &Paths| {
+            local(
+                paths,
+                Id::App(App::Pilot),
+                &HashMap::new(),
+                &HashMap::new(),
+                None,
+            )
+            .installed
+        };
+        let at = |version: &str| {
+            Some(Installed {
+                channel: Channel::Flatpak,
+                version: Some(version.into()),
+            })
+        };
+        put(paths.system_flatpak.clone(), "0.2.0");
+        assert_eq!(found(&paths), at("0.2.0"));
+        put(home.join(".local/share/flatpak"), "0.3.0");
+        assert_eq!(found(&paths), at("0.3.0"));
+        // A copy in the home is the one on PATH.
+        std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+        std::fs::write(home.join(".local/bin/vinopilot"), "").unwrap();
+        assert_eq!(found(&paths).map(|i| i.channel), Some(Channel::Source));
         std::fs::remove_dir_all(home).unwrap();
     }
 
@@ -675,6 +769,7 @@ mod tests {
             home: home.clone(),
             source_root: home.join("src"),
             system_bin: home.join("usr/bin"),
+            system_flatpak: home.join("var/lib/flatpak"),
         };
         let crates = HashMap::new();
         let uv = HashMap::new();

@@ -133,15 +133,26 @@ pub enum Channel {
     Source,
     /// PyPI through `uv tool`, or crates.io through `cargo install`.
     Package,
+    /// vinoPilot's own release as a `.deb`, system-wide. Like the next two,
+    /// only vinoPilot is found this way, and no `channels()` offers it.
+    Deb,
+    /// The same as an `.rpm`.
+    Rpm,
+    /// The same as a Flatpak bundle, for the user or system-wide.
+    Flatpak,
 }
 
 impl Channel {
-    /// `release`, `source`, or `package` (also `pypi`, `crates`).
+    /// `release`, `source`, or `package` (also `pypi`, `crates`); `deb`,
+    /// `rpm` and `flatpak` for vinoPilot itself.
     pub fn parse(text: &str) -> Option<Channel> {
         match text.to_lowercase().as_str() {
             "release" | "binary" => Some(Channel::Release),
             "source" | "git" => Some(Channel::Source),
             "package" | "pypi" | "crates" | "crates.io" | "cargo" | "uv" => Some(Channel::Package),
+            "deb" => Some(Channel::Deb),
+            "rpm" => Some(Channel::Rpm),
+            "flatpak" => Some(Channel::Flatpak),
             _ => None,
         }
     }
@@ -152,6 +163,9 @@ impl Channel {
             (Channel::Source, _) => "Source",
             (Channel::Package, Some(Package::PyPi(_))) => "PyPI",
             (Channel::Package, _) => "crates.io",
+            (Channel::Deb, _) => "deb package",
+            (Channel::Rpm, _) => "rpm package",
+            (Channel::Flatpak, _) => "Flatpak",
         }
     }
 }
@@ -336,6 +350,69 @@ echo "checksum verified"
 install -Dm755 "$tmp/ovfetch-x86_64-linux" "$BIN/ovfetch"
 "$BIN/ovfetch" --version
 "#;
+
+/// vinoPilot's Flatpak, and the menu entry's name.
+pub const PILOT_APP_ID: &str = "io.github.karanshukla.vinopilot";
+
+/// Before vinoPilot's own package steps: `fetch ASSET` downloads that file
+/// of the release into `$tmp` and checks it against the release's
+/// SHA256SUMS, as install.sh does the tarball. `as_root` is pkexec for the
+/// one command that installs it; the download and the check stay the user's.
+const PILOT_PACKAGE: &str = r#"tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local f
+    for f in SHA256SUMS "$1"; do
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$f" "$RELEASE/$f"
+    done
+    (cd "$tmp" && awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' SHA256SUMS > want \
+        && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match SHA256SUMS. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user io.github.karanshukla.vinopilot >/dev/null 2>&1; then echo --user; else echo --system; fi
+}
+"#;
+
+const PILOT_DEB: &str = r#"fetch vinopilot-x86_64.deb
+as_root apt-get install -y "$tmp/vinopilot-x86_64.deb""#;
+
+const PILOT_RPM: &str = r#"[ ! -e /run/ostree-booted ] || { echo "✗ This system layers packages with rpm-ostree, which vinoPilot doesn't drive: replace the vinopilot package with the new release's .rpm, or use the Flatpak" >&2; exit 1; }
+fetch vinopilot-x86_64.rpm
+if command -v dnf >/dev/null; then as_root dnf install -y "$tmp/vinopilot-x86_64.rpm"
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive install --allow-unsigned-rpm "$tmp/vinopilot-x86_64.rpm"
+else as_root rpm -U "$tmp/vinopilot-x86_64.rpm"
+fi"#;
+
+const PILOT_RPM_UNINSTALL: &str = r#"if command -v dnf >/dev/null; then as_root dnf remove -y vinopilot
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive remove vinopilot
+else as_root rpm -e vinopilot
+fi"#;
+
+/// A bundle with a newer commit installs over the old one; the same commit
+/// is an error to Flatpak, `--reinstall` or not (1.14, 2026-11-09), and
+/// nothing to do here. A running window keeps its files until it closes:
+/// Flatpak removes a deployment that's in use afterwards.
+const PILOT_FLATPAK: &str = r#"need flatpak "it's what this vinoPilot was installed with"
+fetch vinopilot-x86_64.flatpak
+if out="$(LC_ALL=C flatpak install "$(flatpak_scope)" --noninteractive "$tmp/vinopilot-x86_64.flatpak" 2>&1)"; then
+    echo "$out"
+else
+    echo "$out"
+    case "$out" in
+        *"already installed"*) echo "This release's Flatpak is the one installed" ;;
+        *) exit 1 ;;
+    esac
+fi"#;
 
 /// The steps for `action` on `id` installed (or to be installed) through
 /// `channel`. Empty when that combination doesn't exist. Updating or
@@ -536,6 +613,27 @@ rm -f "$BIN/vinopilot" "$BIN/vinopilot-gui" "$BIN/vinopilot-upgrade"
             "need_cargo; vinopilot-gui --uninstall-desktop || true; for c in vinopilot vinopilot-gui; do cargo uninstall \"$c\" || true; done",
         )],
 
+        // vinoPilot's packages: the release's file for that package manager,
+        // checked, then installed over the old one.
+        (Id::App(App::Pilot), Deb, Install | Update) => {
+            vec![s(&format!("{PILOT_PACKAGE}{PILOT_DEB}"))]
+        }
+        (Id::App(App::Pilot), Deb, Uninstall) => vec![s(&format!(
+            "{PILOT_PACKAGE}as_root apt-get remove -y vinopilot"
+        ))],
+        (Id::App(App::Pilot), Rpm, Install | Update) => {
+            vec![s(&format!("{PILOT_PACKAGE}{PILOT_RPM}"))]
+        }
+        (Id::App(App::Pilot), Rpm, Uninstall) => {
+            vec![s(&format!("{PILOT_PACKAGE}{PILOT_RPM_UNINSTALL}"))]
+        }
+        (Id::App(App::Pilot), Flatpak, Install | Update) => {
+            vec![s(&format!("{PILOT_PACKAGE}{PILOT_FLATPAK}"))]
+        }
+        (Id::App(App::Pilot), Flatpak, Uninstall) => vec![s(&format!(
+            "{PILOT_PACKAGE}flatpak uninstall \"$(flatpak_scope)\" --noninteractive {PILOT_APP_ID}"
+        ))],
+
         // vinoUserInterface: a library, so "installed" means a checkout that builds.
         (Id::Ui, Source, Install | Update) => vec![s(
             r#"checkout; need_cargo; cd "$CHECKOUT"; cargo build --locked --example gallery; echo "Run it: cargo run --example gallery (in $CHECKOUT)""#,
@@ -654,6 +752,37 @@ mod tests {
         );
     }
 
+    /// Every channel a component can be found installed through.
+    fn channels(id: Id) -> Vec<Channel> {
+        let mut all = id.channels();
+        if id == Id::App(App::Pilot) {
+            all.extend([Channel::Deb, Channel::Rpm, Channel::Flatpak]);
+        }
+        all
+    }
+
+    #[test]
+    fn vinopilots_packages_update_from_the_release_checked_and_ask_for_root_themselves() {
+        for (channel, asset) in [
+            (Channel::Deb, "vinopilot-x86_64.deb"),
+            (Channel::Rpm, "vinopilot-x86_64.rpm"),
+            (Channel::Flatpak, "vinopilot-x86_64.flatpak"),
+        ] {
+            assert!(!Id::App(App::Pilot).channels().contains(&channel));
+            for action in ACTIONS {
+                let steps = steps(Id::App(App::Pilot), channel, action);
+                assert!(!steps.is_empty(), "{channel:?} {action:?}");
+                // Only the package manager runs as root, not the whole step.
+                assert!(steps.iter().all(|s| !s.root), "{channel:?} {action:?}");
+            }
+            let update = &steps(Id::App(App::Pilot), channel, Action::Update)[0].script;
+            assert!(update.contains(&format!("fetch {asset}")), "{channel:?}");
+            assert!(update.contains("sha256sum -c"), "{channel:?}");
+            // No other component has them.
+            assert!(steps(Id::Ovfetch, channel, Action::Update).is_empty());
+        }
+    }
+
     #[test]
     fn a_library_has_no_release_or_package_install() {
         assert_eq!(Id::Ui.channels(), vec![Channel::Source]);
@@ -683,7 +812,7 @@ mod tests {
         };
         assert!(bash.status.success());
         for id in Id::ALL {
-            for channel in id.channels() {
+            for channel in channels(id) {
                 for action in ACTIONS {
                     for step in steps(id, channel, action) {
                         let out = std::process::Command::new("bash")

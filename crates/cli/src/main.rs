@@ -209,7 +209,14 @@ fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
         println!("{:<18} {:<12} {:<10} {}", c.name, version, via, update);
     }
     for c in &all {
-        if let Some(system) = &c.local.system_package {
+        // vinoPilot's own package is how it's installed, in the row above.
+        let packaged = matches!(
+            c.local.installed.as_ref().map(|i| i.channel),
+            Some(Channel::Deb | Channel::Rpm)
+        );
+        if let Some(system) = &c.local.system_package
+            && !packaged
+        {
             println!(
                 "\n{} is also a distro package, which vinopilot doesn't remove: {}",
                 c.name, system.remove
@@ -373,8 +380,11 @@ fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
         }
     }
     run(config, args, id, channel, Action::Uninstall)?;
+    // Uninstalling vinoPilot's own package just removed it.
+    let packaged = matches!(channel, Channel::Deb | Channel::Rpm);
     if let Some(remove) = system
         && !args.json
+        && !packaged
     {
         println!(
             "{} is still a distro package. Remove it with: {remove}",

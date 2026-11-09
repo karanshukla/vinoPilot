@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub const APP_ID: &str = "io.github.karanshukla.vinopilot";
+pub const APP_ID: &str = vinopilot_core::catalog::PILOT_APP_ID;
 const ICON: &str = include_str!("../data/io.github.karanshukla.vinopilot.svg");
 
 fn data_home() -> PathBuf {

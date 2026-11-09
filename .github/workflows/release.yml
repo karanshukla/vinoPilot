@@ -1,12 +1,14 @@
 name: Release
 
-# Push a tag like v0.1.0 to publish a release with prebuilt binaries, then
-# (after approval) the three crates to crates.io and the terminal UI to PyPI.
+# Push a tag like v0.1.0 to publish a release with prebuilt binaries (a
+# tarball, a .deb, an .rpm and a Flatpak bundle of the same two), then (after
+# approval) the three crates to crates.io and the terminal UI to PyPI.
 #
-# Jobs are split by permission. `build` holds no write token. `attest` holds
-# only the OIDC and attestation scopes needed to sign build provenance.
-# `publish` holds `contents: write` and never builds, so the bytes attached
-# to the release are exactly the ones that were attested. Verify with:
+# Jobs are split by permission. `build` and `flatpak` hold no write token.
+# `attest` holds only the OIDC and attestation scopes needed to sign build
+# provenance. `publish` holds `contents: write` and never builds, so the
+# bytes attached to the release are exactly the ones that were attested.
+# Verify with (the .deb, .rpm and .flatpak the same way):
 #
 #   gh attestation verify vinopilot-x86_64-linux.tar.gz --repo karanshukla/vinopilot
 on:
@@ -47,24 +49,70 @@ jobs:
           test "$tui" = "${GITHUB_REF_NAME#v}" || { echo "tag $GITHUB_REF_NAME, tui/pyproject.toml $tui" >&2; exit 1; }
       # The tag's CI run may not have finished, so test the tagged tree here too.
       - run: cargo test --locked --workspace
+      # rpmbuild, for the .rpm; dpkg-deb is already there.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
       - name: Build and package
         run: |
           .github/package-release.sh
           cp notes.md dist/
-      - name: Smoke-test the tarball
-        run: tests/release-smoke.sh dist "${GITHUB_REF_NAME#v}"
+      - name: Smoke-test the tarball, the .deb and the .rpm
+        run: |
+          tests/release-smoke.sh dist "${GITHUB_REF_NAME#v}"
+          tests/package-install.sh dist "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/SHA256SUMS
+            dist/install.sh
+            dist/notes.md
+          if-no-files-found: error
+
+  # The Flatpak bundle, around the binaries `build` made: a newer runner than
+  # theirs, for a Flatpak that knows the current runtime. It passes on
+  # everything `build` uploaded plus the bundle, as `dist`.
+  flatpak:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build
+          path: dist
+      - name: Install Flatpak
+        run: |
+          sudo apt-get update
+          # librsvg2-common: flatpak-builder's appstream step reads the SVG icon with it.
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils dbus-daemon librsvg2-common
+          # Ubuntu 24.04 keeps bubblewrap, Flatpak's sandbox, from making its user namespace.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: .github/package-flatpak.sh dist
+      - name: Smoke-test the Flatpak
+        run: tests/flatpak-smoke.sh dist "${GITHUB_REF_NAME#v}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: |
             dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/*.flatpak
             dist/SHA256SUMS
             dist/install.sh
             dist/notes.md
           if-no-files-found: error
 
   attest:
-    needs: build
+    needs: flatpak
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -79,6 +127,9 @@ jobs:
         with:
           subject-path: |
             dist/vinopilot-x86_64-linux.tar.gz
+            dist/vinopilot-x86_64.deb
+            dist/vinopilot-x86_64.rpm
+            dist/vinopilot-x86_64.flatpak
             dist/install.sh
 
   publish:
@@ -95,7 +146,7 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file dist/notes.md dist/*.tar.gz dist/install.sh dist/SHA256SUMS
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file dist/notes.md dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.flatpak dist/install.sh dist/SHA256SUMS
 
   # Trusted publishing: crates.io trusts this workflow file, in this repo, in
   # the `crates-io` environment, so no API token exists anywhere. The

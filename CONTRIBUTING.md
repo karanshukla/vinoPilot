@@ -23,7 +23,7 @@ cargo build -p vinopilot -p vinopilot-gui && tests/install-e2e.sh target/debug
 cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --frozen ruff format --check .
 ```
 
-CI also builds the release tarball the way `release.yml` does and runs it.
+CI also builds the release tarball, the .deb, the .rpm and the Flatpak the way `release.yml` does, installs each (the .deb on Debian and the .rpm on Fedora, in containers) and runs it. A PR's packages are in its run's `dist` artifact.
 
 - The terminal UI in `tui/` needs [uv](https://docs.astral.sh/uv/); `cd tui && uv sync` makes its venv, `VINOPILOT_BIN=../target/debug/vinopilot uv run vinopilot-tui` runs it on this checkout's command. Its tests drive a fake `vinopilot`, so a JSON change needs `tests/fake_vinopilot.py` updated too.
 - `crates/cli/tests/cli.rs` is the `--json` contract. Change it when you change the shape, and say so in the changelog and `docs/json-api.md`.
