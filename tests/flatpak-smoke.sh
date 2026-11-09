@@ -27,8 +27,20 @@ done
 VINOPILOT_RELEASE_BASE="file://$dist" "$files/libexec/vinopilot/vinopilot" list --json | tr -d ' \n' |
     grep -q "\"installed\":{\"channel\":\"flatpak\",\"version\":\"$version\"}" ||
     { echo "vinopilot does not see its own Flatpak" >&2; exit 1; }
+# The same bundle again is nothing to do, and not a failure.
 VINOPILOT_RELEASE_BASE="file://$dist" "$files/libexec/vinopilot/vinopilot" update vinopilot | tee "$tmp/update"
 grep -qx "checksum verified" "$tmp/update"
+# A newer one, the same files in a new commit, replaces it.
+ostree init --repo="$tmp/repo" --mode=archive
+flatpak build-import-bundle "$tmp/repo" "$dist/vinopilot-x86_64.flatpak"
+flatpak build-commit-from --force --src-ref="app/$id/x86_64/master" "$tmp/repo" "app/$id/x86_64/master"
+mkdir "$tmp/next"
+flatpak build-bundle "$tmp/repo" "$tmp/next/vinopilot-x86_64.flatpak" "$id"
+(cd "$tmp/next" && sha256sum vinopilot-x86_64.flatpak > SHA256SUMS)
+before="$(flatpak info --user --show-commit "$id")"
+VINOPILOT_RELEASE_BASE="file://$tmp/next" "$files/libexec/vinopilot/vinopilot" update vinopilot
+after="$(flatpak info --user --show-commit "$id")"
+test "$before" != "$after" || { echo "the Flatpak's update left commit $before installed" >&2; exit 1; }
 out="$(dbus-run-session -- flatpak run --command=vinopilot "$id" --version)"
 test "$out" = "vinopilot $version" || { echo "after its update, the Flatpak said: $out" >&2; exit 1; }
 flatpak info --show-permissions "$id" | tr -d '\n' | grep -qx '\[Session Bus Policy\]org.freedesktop.Flatpak=talk' ||

@@ -398,11 +398,21 @@ elif command -v zypper >/dev/null; then as_root zypper --non-interactive remove 
 else as_root rpm -e vinopilot
 fi"#;
 
-/// A running window keeps its files until it closes: Flatpak removes a
-/// deployment that's in use afterwards.
+/// A bundle with a newer commit installs over the old one; the same commit
+/// is an error to Flatpak, `--reinstall` or not (1.14, 2026-11-09), and
+/// nothing to do here. A running window keeps its files until it closes:
+/// Flatpak removes a deployment that's in use afterwards.
 const PILOT_FLATPAK: &str = r#"need flatpak "it's what this vinoPilot was installed with"
 fetch vinopilot-x86_64.flatpak
-flatpak install "$(flatpak_scope)" --noninteractive --reinstall "$tmp/vinopilot-x86_64.flatpak""#;
+if out="$(LC_ALL=C flatpak install "$(flatpak_scope)" --noninteractive "$tmp/vinopilot-x86_64.flatpak" 2>&1)"; then
+    echo "$out"
+else
+    echo "$out"
+    case "$out" in
+        *"already installed"*) echo "This release's Flatpak is the one installed" ;;
+        *) exit 1 ;;
+    esac
+fi"#;
 
 /// The steps for `action` on `id` installed (or to be installed) through
 /// `channel`. Empty when that combination doesn't exist. Updating or
