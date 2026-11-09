@@ -6,7 +6,8 @@
 # DIST is what package-release.sh made. This unpacks its tarball, builds
 # packaging/flatpak's manifest around those binaries, writes
 # DIST/vinopilot-x86_64.flatpak and adds it to DIST/SHA256SUMS. Needs flatpak
-# and flatpak-builder; the runtime and SDK come from Flathub, for this user.
+# and flatpak-builder, and librsvg2-common for its appstream step to read the
+# SVG icon; the runtime and SDK come from Flathub, for this user.
 set -eu
 
 dist="$(cd "$1" && pwd)"

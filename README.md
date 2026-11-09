@@ -47,7 +47,7 @@ curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vi
 flatpak install --user ./vinopilot-x86_64.flatpak
 ```
 
-There's no apt, dnf or Flatpak repository behind these, so they don't update themselves: install the next release's file over the old one. The window says which package it came from instead of offering its own update. The Flatpak isn't sandboxed: vinoPilot installs apps on your system with your own `bash`, `git`, `uv`, `cargo` and `pkexec`, so its only permission is the one to run on the host (`org.freedesktop.Flatpak`), and the window and `flatpak run --command=vinopilot io.github.karanshukla.vinopilot` run there.
+vinoPilot updates itself the way it was installed: the version button in the header (or `vinopilot update vinopilot`) downloads the new release's .deb, .rpm or Flatpak, checks it against the release's `SHA256SUMS`, and hands it to `apt`, `dnf` or `flatpak`. The .deb and .rpm ask for your password for that one command. There's no apt, dnf or Flatpak repository behind them, so your system's own updater doesn't see new versions, and on an rpm-ostree system (Silverblue, Bazzite) use the Flatpak or the installer above. The Flatpak isn't sandboxed and doesn't install Flatpaks: vinoPilot installs apps on your system with your own `bash`, `git`, `uv`, `cargo` and `pkexec`, so its only permission is the one to run on the host (`org.freedesktop.Flatpak`), and the window and `flatpak run --command=vinopilot io.github.karanshukla.vinopilot` run there. The apps it installs go into your home through their own installers, as with every other way in.
 
 From crates.io, or a checkout:
 

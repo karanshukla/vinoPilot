@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Installs a packed dist/'s Flatpak bundle for this user and runs both
-# commands through it. They start on the host (packaging/flatpak/host-run.sh),
+# Installs a packed dist/'s Flatpak bundle for this user, runs both commands
+# through it, and has it update itself from dist/ as the release. They start on the host (packaging/flatpak/host-run.sh),
 # so this needs a session bus: dbus-run-session gives a headless runner one.
 #
 #   tests/flatpak-smoke.sh dist 0.1.0
@@ -23,6 +23,14 @@ files="$(flatpak info --user --show-location "$id")/files"
 for bin in vinopilot vinopilot-gui; do
     cmp "$tmp/vinopilot/$bin" "$files/libexec/vinopilot/$bin"
 done
+# Its own update, the way host-run.sh starts it: the binary, on the host.
+VINOPILOT_RELEASE_BASE="file://$dist" "$files/libexec/vinopilot/vinopilot" list --json | tr -d ' \n' |
+    grep -q "\"installed\":{\"channel\":\"flatpak\",\"version\":\"$version\"}" ||
+    { echo "vinopilot does not see its own Flatpak" >&2; exit 1; }
+VINOPILOT_RELEASE_BASE="file://$dist" "$files/libexec/vinopilot/vinopilot" update vinopilot | tee "$tmp/update"
+grep -qx "checksum verified" "$tmp/update"
+out="$(dbus-run-session -- flatpak run --command=vinopilot "$id" --version)"
+test "$out" = "vinopilot $version" || { echo "after its update, the Flatpak said: $out" >&2; exit 1; }
 flatpak info --show-permissions "$id" | tr -d '\n' | grep -qx '\[Session Bus Policy\]org.freedesktop.Flatpak=talk' ||
     { echo "the Flatpak asks for more than org.freedesktop.Flatpak:" >&2; flatpak info --show-permissions "$id" >&2; exit 1; }
 echo "ok - the Flatpak runs ($version)"

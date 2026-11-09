@@ -104,8 +104,12 @@ fn about_shows_how_vinopilot_and_its_commands_are_installed() {
 }
 
 #[test]
-fn about_names_the_distro_package_vinopilot_came_in() {
+fn a_deb_install_updates_from_the_header_like_any_other() {
     let local = Local {
+        installed: Some(Installed {
+            channel: Channel::Deb,
+            version: Some(VERSION.into()),
+        }),
         system_package: Some(SystemPackage {
             kind: "deb",
             packages: vec!["vinopilot".into()],
@@ -118,9 +122,17 @@ fn about_names_the_distro_package_vinopilot_came_in() {
         path: Some("/usr/bin/vinopilot-gui".into()),
         version: Some(VERSION.to_string()),
     }];
-    let mut h = window(local, HashMap::new(), parts);
+    let latest = HashMap::from([(
+        Id::App(App::Pilot),
+        Latest {
+            release: Some(Ok("v99.0.0".into())),
+            ..Default::default()
+        },
+    )]);
+    let mut h = window(local, latest, parts);
+    h.get_by_label(&format!("{VERSION} · update to v99.0.0"));
     h.get_by_label("About vinoPilot").click();
     h.run();
-    h.get_by_label("the deb package");
+    h.get_by_label("deb package");
     h.get_by_label(&format!("/usr/bin/vinopilot-gui ({VERSION})"));
 }

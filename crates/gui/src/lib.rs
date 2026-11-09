@@ -65,7 +65,8 @@ pub struct Pilot {
     focused: bool,
     /// The card whose remove command was just copied, and when.
     copied: Option<(Id, f64)>,
-    /// This window is the Flatpak's, started from where Flatpak keeps it.
+    /// This window is the Flatpak's, started from where Flatpak keeps it:
+    /// it restarts through `flatpak run`, having no command on `PATH`.
     flatpak: bool,
 }
 
@@ -249,7 +250,7 @@ impl Pilot {
                 ))
                 .clicked()
             {
-                restart(&ctx);
+                restart(&ctx, self.flatpak);
             }
             return;
         }
@@ -260,16 +261,15 @@ impl Pilot {
             );
             return;
         }
-        let how = match (&installed, self.packaged()) {
-            (Some(i), _) => format!(
-                "Installed from {}",
-                i.channel.label(Id::App(vino_ui::App::Pilot))
-            ),
-            (None, Some(package)) => {
-                format!("Installed from {package}, which is updated the way it was installed")
-            }
-            (None, None) => "This window isn't an installed vinoPilot".to_string(),
-        };
+        let how = installed.as_ref().map_or_else(
+            || "This window isn't an installed vinoPilot".to_string(),
+            |i| {
+                format!(
+                    "Installed from {}",
+                    i.channel.label(Id::App(vino_ui::App::Pilot))
+                )
+            },
+        );
         match (self.update(Id::App(vino_ui::App::Pilot)), installed) {
             (Update::Available { to }, Some(installed)) => {
                 if ui
@@ -362,10 +362,7 @@ impl Pilot {
                         dim(ui, "Looking…");
                     }
                     None => {
-                        match self.packaged() {
-                            Some(package) => ui.label(package),
-                            None => dim(ui, "Not found in ~/.local/bin or ~/.cargo/bin"),
-                        };
+                        dim(ui, "Not found in ~/.local/bin, ~/.cargo/bin or a package");
                     }
                 }
                 ui.end_row();
@@ -400,21 +397,6 @@ impl Pilot {
                     ui.end_row();
                 }
             });
-    }
-
-    /// The package this window came in, when it isn't one of the catalog's
-    /// installs: `the deb package`, `the rpm package`, `the Flatpak`. Those
-    /// update the way they were installed, not from the header.
-    fn packaged(&self) -> Option<String> {
-        if self.flatpak {
-            return Some("the Flatpak".into());
-        }
-        let system = self
-            .local
-            .get(&Id::App(vino_ui::App::Pilot))?
-            .system_package
-            .as_ref()?;
-        Some(format!("the {} package", system.kind))
     }
 
     /// The version vinoPilot's own update just installed, if it isn't this
@@ -850,8 +832,15 @@ fn part_name(command: &str) -> &'static str {
 }
 
 /// Starts the installed window and closes this one.
-fn restart(ctx: &egui::Context) {
-    match vinopilot_core::command("vinopilot-gui").spawn() {
+fn restart(ctx: &egui::Context, flatpak: bool) {
+    let mut new = if flatpak {
+        let mut run = vinopilot_core::command("flatpak");
+        run.args(["run", desktop::APP_ID]);
+        run
+    } else {
+        vinopilot_core::command("vinopilot-gui")
+    };
+    match new.spawn() {
         Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         Err(e) => eprintln!("vinopilot: couldn't start the new vinopilot-gui: {e}"),
     }

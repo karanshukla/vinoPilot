@@ -77,6 +77,7 @@ impl Config {
             home: home(),
             source_root: self.source_root.clone(),
             system_bin: PathBuf::from("/usr/bin"),
+            system_flatpak: PathBuf::from("/var/lib/flatpak"),
         }
     }
 }

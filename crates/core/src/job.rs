@@ -51,9 +51,20 @@ impl Env {
         Env {
             checkout,
             repo_url: format!("https://github.com/{}.git", id.repo()),
-            release: format!("https://github.com/{}/releases/latest/download", id.repo()),
+            release: release_base(id),
         }
     }
+}
+
+/// Where `id`'s latest release's files are. For vinoPilot itself,
+/// `VINOPILOT_RELEASE_BASE` moves it, as it does for install.sh: the tests
+/// update from a `file://` release.
+fn release_base(id: Id) -> String {
+    let pilot = id == Id::App(vino_ui::App::Pilot);
+    std::env::var("VINOPILOT_RELEASE_BASE")
+        .ok()
+        .filter(|base| pilot && !base.is_empty())
+        .unwrap_or_else(|| format!("https://github.com/{}/releases/latest/download", id.repo()))
 }
 
 /// Drops terminal colour codes and carriage-return redraws.

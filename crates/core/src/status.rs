@@ -63,7 +63,8 @@ pub fn update(installed: Option<&Installed>, latest: Option<&Latest>) -> Update 
         None => Update::Unknown { reason: None },
     };
     match installed.channel {
-        Channel::Release => newer(&latest.release),
+        // vinoPilot's packages are files of its release.
+        Channel::Release | Channel::Deb | Channel::Rpm | Channel::Flatpak => newer(&latest.release),
         Channel::Package => newer(&latest.package),
         Channel::Source => match &latest.behind {
             Some(Ok(0)) => Update::UpToDate,
