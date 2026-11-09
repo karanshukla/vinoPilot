@@ -5,7 +5,7 @@
 #
 #   tests/flatpak-smoke.sh dist 0.1.0
 set -euo pipefail
-dist="${1:?dist dir}" version="${2:?version}"
+dist="$(cd "${1:?dist dir}" && pwd)" version="${2:?version}"
 id=io.github.karanshukla.vinopilot
 
 (cd "$dist" && sha256sum -c --strict SHA256SUMS)

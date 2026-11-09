@@ -5,7 +5,7 @@
 #
 #   tests/release-smoke.sh dist 0.1.0
 set -euo pipefail
-dist="${1:?dist dir}" version="${2:?version}"
+dist="$(cd "${1:?dist dir}" && pwd)" version="${2:?version}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 (cd "$dist" && sha256sum -c --strict SHA256SUMS)
