@@ -29,25 +29,48 @@ Nothing goes online until you press **Check for updates** (or run `vinopilot che
 
 ## Install
 
+Download the Flatpak, the .deb or the .rpm from the [latest release](https://github.com/karanshukla/vinopilot/releases/latest). Each holds `vinopilot` (the command) and `vinopilot-gui` (the window), and adds vinoPilot to your app menu. Opening the downloaded Flatpak in Discover or GNOME Software installs it too.
+
+```sh
+# Flatpak: any distro, including rpm-ostree ones (Silverblue, Kinoite, Bazzite)
+curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.flatpak
+flatpak install --user ./vinopilot-x86_64.flatpak
+
+# Debian, Ubuntu, Mint
+curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.deb
+sudo apt install ./vinopilot-x86_64.deb
+
+# Fedora
+sudo dnf install https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.rpm
+```
+
+The Flatpak isn't sandboxed and doesn't install Flatpaks: vinoPilot installs apps on your system with your own `bash`, `git`, `uv`, `cargo` and `pkexec`, so its only permission is the one to run on the host (`org.freedesktop.Flatpak`), and the window and `flatpak run --command=vinopilot io.github.karanshukla.vinopilot` run there. The apps it installs go into your home through their own installers, as with every other way in.
+
+### Updating
+
+vinoPilot updates itself the way it was installed: the version button in the header (or `vinopilot update vinopilot`) downloads the new release's Flatpak, .deb or .rpm, checks it against the release's `SHA256SUMS`, and hands it to `flatpak`, `apt` or `dnf`. The .deb and .rpm ask for your password for that one command. There's no Flatpak, apt or dnf repository behind them, so your software centre and system updater don't see new versions.
+
+### Uninstalling
+
+The window has no Uninstall for vinoPilot itself. Remove it the way you installed it:
+
+```sh
+flatpak uninstall --user io.github.karanshukla.vinopilot   # the Flatpak
+sudo apt remove vinopilot                                  # the .deb
+sudo dnf remove vinopilot                                  # the .rpm
+```
+
+or with Remove in your software centre. `vinopilot uninstall vinopilot` works for every way in (from the Flatpak: `flatpak run --command=vinopilot io.github.karanshukla.vinopilot uninstall vinopilot`). The apps vinoPilot installed stay; uninstall those first if you want them gone.
+
+### Other ways in
+
+The one-line installer puts the same two binaries in `~/.local/bin`, no sudo:
+
 ```sh
 curl -fsSL https://github.com/karanshukla/vinopilot/releases/latest/download/install.sh | bash
 ```
 
-This puts `vinopilot` (the command) and `vinopilot-gui` (the window) in `~/.local/bin` and adds vinoPilot to your app menu. No sudo. `| bash -s -- --no-gui` skips the window; `| bash -s -- --uninstall` removes it all.
-
-Or as a package, from the [latest release](https://github.com/karanshukla/vinopilot/releases/latest). Each holds the same two binaries as the installer's tarball, system-wide, with the app menu entry:
-
-```sh
-curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.deb
-sudo apt install ./vinopilot-x86_64.deb          # Debian, Ubuntu, Mint
-
-sudo dnf install https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.rpm   # Fedora
-
-curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.flatpak
-flatpak install --user ./vinopilot-x86_64.flatpak
-```
-
-vinoPilot updates itself the way it was installed: the version button in the header (or `vinopilot update vinopilot`) downloads the new release's .deb, .rpm or Flatpak, checks it against the release's `SHA256SUMS`, and hands it to `apt`, `dnf` or `flatpak`. The .deb and .rpm ask for your password for that one command. There's no apt, dnf or Flatpak repository behind them, so your system's own updater doesn't see new versions, and on an rpm-ostree system (Silverblue, Bazzite) use the Flatpak or the installer above. The Flatpak isn't sandboxed and doesn't install Flatpaks: vinoPilot installs apps on your system with your own `bash`, `git`, `uv`, `cargo` and `pkexec`, so its only permission is the one to run on the host (`org.freedesktop.Flatpak`), and the window and `flatpak run --command=vinopilot io.github.karanshukla.vinopilot` run there. The apps it installs go into your home through their own installers, as with every other way in.
+`| bash -s -- --no-gui` skips the window; `| bash -s -- --uninstall` removes it all.
 
 From crates.io, or a checkout:
 
@@ -56,7 +79,7 @@ cargo install --locked vinopilot vinopilot-gui && vinopilot-gui --install-deskto
 ./install.sh                     # in a checkout: builds, then installs as above
 ```
 
-`--install-desktop` adds the app menu entry and icon (install.sh does it for you); `--uninstall-desktop` takes them out.
+`--install-desktop` adds the app menu entry and icon (install.sh does it for you); `--uninstall-desktop` takes them out. Uninstall with `vinopilot-gui --uninstall-desktop && cargo uninstall vinopilot vinopilot-gui`, or `./install.sh --uninstall` in the checkout.
 
 x86_64 only for the release binaries, same as the apps it installs.
 
