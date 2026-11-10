@@ -2,6 +2,11 @@ name: Bug report
 description: An install, update or uninstall went wrong, or an app shows the wrong version or way in.
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        This is for vinoPilot itself: an install, update or uninstall it ran, or what it shows about an app. If the app misbehaves once it's installed, open the issue in that app's repo instead (the links are on the [New issue page](https://github.com/karanshukla/vinoPilot/issues/new/choose)).
+
   - type: textarea
     id: what-happened
     attributes:

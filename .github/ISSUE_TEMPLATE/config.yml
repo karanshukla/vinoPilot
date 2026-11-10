@@ -1,1 +1,31 @@
+# Issues here are for vinoPilot itself: installing, updating, uninstalling,
+# and how it detects apps. A problem inside an app goes to that app's repo.
 blank_issues_enabled: true
+contact_links:
+  - name: vinoWhisper
+    url: https://github.com/karanshukla/vinoWhisper/issues/new/choose
+    about: A bug or idea in vinoWhisper (live captions and voice typing) itself, once it's installed.
+  - name: vinoAuthFace
+    url: https://github.com/karanshukla/vinoAuthFace/issues/new/choose
+    about: A bug or idea in vinoAuthFace (face unlock) itself, once it's installed.
+  - name: vinoOpenEffects
+    url: https://github.com/karanshukla/vinoOpenEffects/issues/new/choose
+    about: A bug or idea in vinoOpenEffects (video call effects) itself, once it's installed.
+  - name: vinoPop
+    url: https://github.com/karanshukla/vinoPop/issues/new/choose
+    about: A bug or idea in vinoPop (AI actions on selected text) itself, once it's installed.
+  - name: vinoSpeak
+    url: https://github.com/karanshukla/vinoSpeak/issues/new/choose
+    about: A bug or idea in vinoSpeak (text-to-speech) itself, once it's installed.
+  - name: vinoSearch
+    url: https://github.com/karanshukla/vinoSearch/issues/new/choose
+    about: A bug or idea in vinoSearch (file search) itself, once it's installed.
+  - name: vinoWatch
+    url: https://github.com/karanshukla/vinoWatch/issues/new/choose
+    about: A bug or idea in vinoWatch (the NPU monitor) itself, once it's installed.
+  - name: ovfetch
+    url: https://github.com/karanshukla/ovfetch/issues/new/choose
+    about: A bug or idea in ovfetch (the OpenVINO runtime fetcher) itself, once it's installed.
+  - name: vinoUserInterface
+    url: https://github.com/karanshukla/vinoUserInterface/issues/new/choose
+    about: A bug or idea in vinoUserInterface (the shared egui library) itself, once it's installed.
