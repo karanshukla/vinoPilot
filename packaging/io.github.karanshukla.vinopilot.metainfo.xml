@@ -3,7 +3,7 @@
 <component type="desktop-application">
   <id>io.github.karanshukla.vinopilot</id>
   <name>vinoPilot</name>
-  <summary>Install and update offline AI apps for Intel NPUs</summary>
+  <summary>The vinoPilot family of AI apps for Intel NPUs</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <developer id="io.github.karanshukla">
@@ -11,13 +11,15 @@
   </developer>
   <description>
     <p>
-      The vinoPilot apps bring Copilot+ PC features to Linux: live captions, face
-      unlock, video call effects, AI text tools, text-to-speech and search. They run
-      offline on Intel NPUs with OpenVINO, so they work without an account or an
-      internet connection and are easy on the battery.
+      vinoPilot is a family of apps for Linux laptops with an Intel NPU. They bring
+      Copilot+ PC features to Linux: live captions, face unlock, video call effects,
+      AI text tools, text-to-speech and search. Everything runs offline on the NPU
+      with OpenVINO, so there's no account or cloud service, and it's easy on the
+      battery.
     </p>
     <p>
-      vinoPilot is one window to install, update and uninstall them:
+      This app is the family's home: one window to install, update and uninstall
+      the rest of it.
     </p>
     <ul>
       <li>vinoWhisper: live captions and voice typing</li>
