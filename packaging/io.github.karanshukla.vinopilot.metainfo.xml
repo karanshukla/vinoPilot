@@ -3,7 +3,7 @@
 <component type="desktop-application">
   <id>io.github.karanshukla.vinopilot</id>
   <name>vinoPilot</name>
-  <summary>Install, update and uninstall the vinoPilot apps</summary>
+  <summary>Install and update offline AI apps for Intel NPUs</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <developer id="io.github.karanshukla">
@@ -11,14 +11,33 @@
   </developer>
   <description>
     <p>
-      One place to install, update and uninstall the vinoPilot apps: vinoWhisper,
-      vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch and
-      ovfetch. Each app has its own hash-checked installer; vinoPilot knows which
-      one to run, how each app got onto your machine, and whether there is
-      something newer for that way in.
+      The vinoPilot apps bring Copilot+ PC features to Linux: live captions, face
+      unlock, video call effects, AI text tools, text-to-speech and search. They run
+      offline on Intel NPUs with OpenVINO, so they work without an account or an
+      internet connection and are easy on the battery.
     </p>
     <p>
-      Nothing goes online until you press Check for updates.
+      vinoPilot is one window to install, update and uninstall them:
+    </p>
+    <ul>
+      <li>vinoWhisper: live captions and voice typing</li>
+      <li>vinoAuthFace: unlock and sudo with your face</li>
+      <li>vinoOpenEffects: look better on video calls</li>
+      <li>vinoPop: AI actions on any text you select</li>
+      <li>vinoSpeak: natural-sounding text-to-speech</li>
+      <li>vinoSearch: find files by what they're about</li>
+      <li>vinoWatch: see what your NPU is doing</li>
+      <li>ovfetch: fetches the OpenVINO runtime the NPU needs</li>
+    </ul>
+    <p>
+      Each app installs through its own installer from its GitHub release, checked
+      against the release's checksums, or from source, PyPI or crates.io. vinoPilot
+      also finds apps you installed before it, shows how each one got there, and
+      updates it the same way. Nothing goes online until you press Check for updates.
+    </p>
+    <p>
+      The apps install on your system, not in a sandbox: into your home folder with
+      your own tools, and vinoAuthFace system-wide, after asking for your password.
     </p>
   </description>
   <launchable type="desktop-id">io.github.karanshukla.vinopilot.desktop</launchable>
