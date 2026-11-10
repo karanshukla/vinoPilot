@@ -52,5 +52,5 @@ cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --
 ## CI and repo rules
 
 - Actions pinned to commit SHAs with a version comment; Dependabot with a 7-day cooldown, nothing auto-merges.
-- Conventional commits; CHANGELOG.md from `git cliff`. A release tag needs a matching `## [x.y.z]` section and every crate at that version.
+- Conventional commits; CHANGELOG.md from `git cliff`. A release tag needs a matching `## [x.y.z]` section, a `<release>` line at the top of `packaging/io.github.karanshukla.vinopilot.metainfo.xml`, and every crate at that version.
 - Releases: build (no write token; tarball, .deb, .rpm), flatpak (the bundle, on ubuntu-24.04), attest, publish, then crates.io by trusted publishing behind the `crates-io` environment's approval, core first.
