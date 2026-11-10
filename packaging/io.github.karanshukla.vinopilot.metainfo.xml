@@ -39,5 +39,30 @@
     <binary>vinopilot</binary>
     <binary>vinopilot-gui</binary>
   </provides>
+  <!-- Newest first. release.yml checks the tag has its line here. -->
+  <releases>
+    <release version="0.3.0" date="2026-11-09">
+      <description>
+        <ul>
+          <li>A .deb, an .rpm and a Flatpak on every release</li>
+          <li>vinoPilot updates and uninstalls itself as the package it came in</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.2.0" date="2026-11-08">
+      <description>
+        <ul>
+          <li>The version in the header checks for a newer vinoPilot, updates it and restarts the window</li>
+          <li>An About popup says how vinoPilot and its commands are installed</li>
+          <li>A warning when one copy of a command hides another</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-11-07">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
   <content_rating type="oars-1.1"/>
 </component>
