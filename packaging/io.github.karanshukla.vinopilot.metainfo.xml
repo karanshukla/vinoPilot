@@ -62,6 +62,13 @@
   </provides>
   <!-- Newest first. release.yml checks the tag has its line here. -->
   <releases>
+    <release version="0.4.0" date="2026-11-11">
+      <description>
+        <ul>
+          <li>Uninstalling an app removes its downloaded models and keeps your data</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-11-09">
       <description>
         <ul>
