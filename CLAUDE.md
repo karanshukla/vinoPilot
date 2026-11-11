@@ -37,7 +37,7 @@ cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --
 
 ## Gotchas
 
-- **Each app's installer is the source of truth.** Read the app's `install.sh` (and `scripts/install.sh`, `uninstall.sh`) before changing its steps; flags differ per app (vinoWatch's is POSIX `sh`, vinoAuthFace's needs root, vinoOpenEffects' uninstaller only ships in the repo, vinoWhisper has none). `every_script_parses` only checks syntax.
+- **Each app's installer is the source of truth.** Read the app's `install.sh` (and `scripts/install.sh`, `uninstall.sh`) before changing its steps; flags differ per app (vinoWatch's is POSIX `sh`, vinoAuthFace's needs root, vinoOpenEffects' uninstaller shipped only in the repo before `vinoopeneffects-upgrade --uninstall`, vinoWhisper's is `vinowhisper-upgrade --uninstall` in newer releases and the catalog's own `WHISPER_UNINSTALL` otherwise). Uninstall removes an app's models and keeps the user's data; that's each app's uninstaller's call, so don't add per-app purges here (vinoWhisper's fallback is the exception). `every_script_parses` only checks syntax.
 - **pkexec clears the environment.** Root steps get their vars through `pkexec env`, plus `SUDO_USER` so vinoAuthFace's `deploy.sh` builds and finds the desktop user as itself. A pkexec child is root's: `Job::stop` can't kill it.
 - **`core` forbids unsafe**, so no `env::set_var`; that's why `command()` sets `PATH` per child.
 - **The release CLI is static musl, the window is glibc.** eframe dlopens libEGL/wayland/X11, which static musl can't. The window is built on ubuntu-22.04 for an old glibc floor.

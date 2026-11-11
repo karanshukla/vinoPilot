@@ -123,7 +123,9 @@ App names work with or without the `vino`. `--via` takes `release` (the default)
 
 ## Limits
 
-- **vinoWhisper has no uninstaller of its own.** vinoPilot's undoes what its installer writes (the `uv` tool, the units, the tray and window, the menu entries) and leaves the downloaded models and settings.
+- **Uninstalling an app removes its downloaded models** and keeps your own data and settings (transcripts, indexes, face templates). Each app's own uninstaller decides what that covers; vinoPilot runs it. Shared folders such as `~/.cache/huggingface` and the runtime ovfetch fetched stay.
+- **Only newer vinoWhisper releases have an uninstaller** (`vinowhisper-upgrade --uninstall`), and vinoPilot uses it when it's there. Otherwise vinoPilot's own undoes what the installer writes (the `uv` tool, the units, the tray and window, the menu entries) and deletes the models in `~/.local/share/vinowhisper/models` and `~/.cache/vinowhisper`; transcripts, sessions and settings stay.
+- **A vinoSpeak installed from PyPI keeps its models** when uninstalled: there's no checkout or `vinospeak-upgrade` to run its uninstaller from. They're in `~/.cache/vinospeak`.
 - **Uninstalling a source install moves its checkout to the trash** (with `gio`, `kioclient` or `trash-put`), unless it has uncommitted, unpushed or stashed work: then it's kept and the uninstall says why. Copies an old `cargo install` left in `~/.cargo/bin` go too.
 - **Detection is a best guess for hand installs.** An app with no `-upgrade` script, no uv receipt and no cargo record but a binary in `~/.local/bin` shows as a source install.
 - **vinoAuthFace's channel comes from its version.** Release builds are stamped with their tag, checkouts say `dev`.

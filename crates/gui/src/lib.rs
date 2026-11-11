@@ -536,10 +536,23 @@ impl Pilot {
                         }
                     });
                 });
-                widgets::muted(ui, id.blurb());
+                match &local.installed {
+                    // Confirming: what uninstalling removes and keeps, in
+                    // place of the blurb.
+                    Some(installed) if confirming => {
+                        let note = catalog::uninstall_note(id, installed.channel);
+                        ui.add(
+                            egui::Label::new(RichText::new(note).size(12.5).color(p.error)).wrap(),
+                        );
+                    }
+                    _ => {
+                        widgets::muted(ui, id.blurb());
+                    }
+                }
                 ui.add_space(2.0);
                 status_line(ui, id, &local, &update, looking);
-                if let Some(checkout) = &local.checkout {
+                // The note says where the checkout goes, in its place.
+                if let Some(checkout) = local.checkout.as_ref().filter(|_| !confirming) {
                     let text = format!("{} · {}", tilde(&checkout.path), checkout.describe);
                     ui.add(
                         egui::Label::new(RichText::new(&text).size(12.0).color(p.muted)).truncate(),
