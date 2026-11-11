@@ -286,9 +286,15 @@ trash_checkout() {
     echo "Moved $CHECKOUT to the trash"
 }"#;
 
-/// vinoWhisper has no uninstaller: this undoes what its installer and
-/// vinowhisper-setup write, and leaves the models and config.
-const WHISPER_UNINSTALL: &str = r#"units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+/// vinoWhisper's own uninstaller is `vinowhisper-upgrade --uninstall`, in
+/// releases that have it. Without it, this undoes what its installer and
+/// vinowhisper-setup write, then deletes the models and their cache once the
+/// server is stopped. Transcripts, sessions and settings stay.
+const WHISPER_UNINSTALL: &str = r#"if [ -x "$BIN/vinowhisper-upgrade" ] && grep -q -- '--uninstall' "$BIN/vinowhisper-upgrade"; then
+    "$BIN/vinowhisper-upgrade" --uninstall </dev/null
+    exit
+fi
+units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 systemctl --user disable --now vinowhisper-server.socket vinowhisper-server.service 2>/dev/null || true
 rm -f "$units/vinowhisper-server.service" "$units/vinowhisper-server.socket"
 systemctl --user daemon-reload 2>/dev/null || true
@@ -304,7 +310,8 @@ done
 rm -f "$BIN/vinowhisper-tray" "$BIN/vinowhisper-gui" "$BIN/vinowhisper-upgrade"
 rm -f "${XDG_DATA_HOME:-$HOME/.local/share}"/applications/io.github.karanshukla.vinowhisper*.desktop
 rm -f "${XDG_CONFIG_HOME:-$HOME/.config}"/autostart/io.github.karanshukla.vinowhisper*.desktop
-echo "Removed vinoWhisper. Its models and settings are still in ~/.local/share and ~/.config."
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/vinowhisper/models" "${XDG_CACHE_HOME:-$HOME/.cache}/vinowhisper"
+echo "Removed vinoWhisper and its models. Your transcripts, sessions and settings are still in ~/.local/share/vinowhisper and ~/.config/vinowhisper."
 "#;
 
 const SPEAK_SOURCE: &str = r#"need_uv
@@ -320,13 +327,18 @@ const SPEAK_UNINSTALL: &str = r#"if [ -x "$BIN/vinospeak-upgrade" ]; then
 else
     if [ -x "$CHECKOUT/gui/install.sh" ]; then "$CHECKOUT/gui/install.sh" --uninstall </dev/null || true; fi
     if command -v uv >/dev/null && uv tool list 2>/dev/null | grep -q '^vinospeak '; then uv tool uninstall vinospeak; fi
+    # The checkout's installer removes the models too.
+    if [ -f "$CHECKOUT/install.sh" ]; then bash "$CHECKOUT/install.sh" --uninstall </dev/null; fi
 fi
 drop_cargo_copies vinospeak-gui
 "#;
 
-/// vinoOpenEffects' uninstaller ships in the repo, not in ~/.local: use the
+/// vinoOpenEffects' uninstaller is `vinoopeneffects-upgrade --uninstall` in
+/// releases that have it. Before that it shipped only in the repo: use the
 /// checkout's, or a shallow clone's.
-const OPENEFFECTS_UNINSTALL: &str = r#"if [ -x "$CHECKOUT/scripts/uninstall.sh" ]; then
+const OPENEFFECTS_UNINSTALL: &str = r#"if [ -x "$BIN/vinoopeneffects-upgrade" ] && grep -q -- '--uninstall' "$BIN/vinoopeneffects-upgrade"; then
+    bash "$BIN/vinoopeneffects-upgrade" --uninstall </dev/null
+elif [ -x "$CHECKOUT/scripts/uninstall.sh" ]; then
     "$CHECKOUT/scripts/uninstall.sh"
 else
     tmp="$(mktemp -d)"
@@ -413,6 +425,24 @@ else
         *) exit 1 ;;
     esac
 fi"#;
+
+/// What uninstalling `id` installed through `channel` removes and what it
+/// keeps, in a sentence or two for the confirmation. Each app's own
+/// uninstaller deletes its downloaded models and keeps the user's data.
+pub fn uninstall_note(id: Id, channel: Channel) -> String {
+    let what = match id {
+        Id::App(App::Pilot) => "Removes this app. The apps it installed stay.",
+        Id::App(App::Watch) => "Removes the app.",
+        Id::App(_) => "Removes the app and its downloaded models. Your own data and settings stay.",
+        Id::Ovfetch => "Removes ovfetch. The runtime it fetched stays.",
+        Id::Ui => return "Moves the checkout to the trash.".into(),
+    };
+    if channel == Channel::Source {
+        format!("{what} Moves the checkout to the trash.")
+    } else {
+        what.into()
+    }
+}
 
 /// The steps for `action` on `id` installed (or to be installed) through
 /// `channel`. Empty when that combination doesn't exist. Updating or
@@ -803,6 +833,138 @@ mod tests {
     fn checkout_names_match_the_repos() {
         assert_eq!(Id::App(App::Search).checkout_name(), "vinoSearch");
         assert_eq!(Id::Ui.checkout_name(), "vinoUserInterface");
+    }
+
+    #[test]
+    fn the_uninstall_note_names_the_models_only_for_apps_that_have_them() {
+        for id in Id::ALL {
+            for channel in id.channels() {
+                let note = uninstall_note(id, channel);
+                let models = matches!(id, Id::App(app) if app != App::Pilot && app != App::Watch);
+                assert_eq!(note.contains("models"), models, "{} {channel:?}", id.name());
+                assert_eq!(
+                    note.contains("trash"),
+                    channel == Channel::Source,
+                    "{} {channel:?}",
+                    id.name()
+                );
+                assert_eq!(
+                    note.matches("trash").count(),
+                    usize::from(channel == Channel::Source)
+                );
+            }
+        }
+    }
+
+    /// Runs vinoWhisper's uninstall step in a home of its own, with
+    /// `systemctl` and `uv` stubbed out so nothing reaches the real session.
+    fn uninstall_whisper(name: &str, setup: impl FnOnce(&std::path::Path)) -> std::path::PathBuf {
+        use std::fs;
+        let root =
+            std::env::temp_dir().join(format!("vinopilot-whisper-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let stubs = root.join("stubs");
+        fs::create_dir_all(&stubs).unwrap();
+        for stub in ["systemctl", "uv"] {
+            let path = stubs.join(stub);
+            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            make_executable(&path);
+        }
+        let data = root.join("data/vinowhisper");
+        let cache = root.join("cache/vinowhisper");
+        for dir in [
+            data.join("models/whisper-small.en"),
+            data.join("transcripts"),
+            data.join("sessions"),
+            cache.join("export-tmp"),
+            home.join(".config/vinowhisper"),
+            home.join(".local/bin"),
+        ] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(data.join("models/whisper-small.en/model.xml"), "x").unwrap();
+        fs::write(data.join("transcripts/2026-11-11-120000.txt"), "x").unwrap();
+        setup(&home);
+        let step = &steps(Id::App(App::Whisper), Channel::Release, Action::Uninstall)[0];
+        let out = std::process::Command::new("bash")
+            .args(["-c", &step.script])
+            .env_clear()
+            .env("HOME", &home)
+            .env("XDG_DATA_HOME", root.join("data"))
+            .env("XDG_CACHE_HOME", root.join("cache"))
+            .env("PATH", format!("{}:/usr/bin:/bin", stubs.display()))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        root
+    }
+
+    fn make_executable(path: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn uninstalling_vinowhisper_deletes_its_models_and_keeps_transcripts_and_settings() {
+        if std::process::Command::new("bash")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let root = uninstall_whisper("inline", |_| {});
+        assert!(!root.join("data/vinowhisper/models").exists());
+        assert!(!root.join("cache/vinowhisper").exists());
+        assert!(
+            root.join("data/vinowhisper/transcripts/2026-11-11-120000.txt")
+                .exists()
+        );
+        assert!(root.join("data/vinowhisper/sessions").exists());
+        assert!(root.join("home/.config/vinowhisper").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn vinowhispers_own_uninstaller_runs_when_it_has_one() {
+        if std::process::Command::new("bash")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        // An upgrade script that knows --uninstall is run with it, and the
+        // inline steps aren't.
+        let root = uninstall_whisper("own", |home| {
+            let upgrade = home.join(".local/bin/vinowhisper-upgrade");
+            std::fs::write(
+                &upgrade,
+                "#!/bin/sh\n# --uninstall: remove it\necho \"$@\" > \"$HOME/ran\"\n",
+            )
+            .unwrap();
+            make_executable(&upgrade);
+        });
+        let ran = std::fs::read_to_string(root.join("home/ran")).unwrap();
+        assert_eq!(ran.trim(), "--uninstall");
+        assert!(root.join("data/vinowhisper/models").exists());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        // An older one that doesn't is left alone, and the inline steps run.
+        let root = uninstall_whisper("old", |home| {
+            let upgrade = home.join(".local/bin/vinowhisper-upgrade");
+            std::fs::write(&upgrade, "#!/bin/sh\necho \"$@\" > \"$HOME/ran\"\n").unwrap();
+            make_executable(&upgrade);
+        });
+        assert!(!root.join("home/ran").exists());
+        assert!(!root.join("home/.local/bin/vinowhisper-upgrade").exists());
+        assert!(!root.join("data/vinowhisper/models").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

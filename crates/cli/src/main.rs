@@ -372,6 +372,7 @@ fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
                 "pass --yes to uninstall without a terminal".into(),
             ));
         }
+        eprintln!("{}", catalog::uninstall_note(id, channel));
         eprint!("Uninstall {} ({})? [y/N] ", id.name(), channel.label(id));
         let mut answer = String::new();
         let _ = std::io::stdin().read_line(&mut answer);
