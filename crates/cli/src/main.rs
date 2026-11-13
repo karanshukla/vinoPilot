@@ -272,7 +272,7 @@ fn run(
             let _ = writeln!(out, "{line}");
         }
     });
-    let env = Env::for_id(id, config.paths().checkout(id));
+    let env = Env::for_id(id, &config.paths());
     let outcome = Job::start(id, channel, action, steps, env, notify).wait();
     if json {
         println!(
@@ -412,7 +412,7 @@ fn steps(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failur
         .via
         .or_else(|| installed_channel(config, id))
         .unwrap_or(id.channels()[0]);
-    let env = Env::for_id(id, config.paths().checkout(id));
+    let env = Env::for_id(id, &config.paths());
     println!(
         "# {} {} via {}",
         action.verb(),

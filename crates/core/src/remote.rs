@@ -136,9 +136,25 @@ fn behind(checkout: &Path) -> Result<u32, String> {
     if !run(&["fetch", "--quiet"])?.status.success() {
         return Err("git fetch failed".into());
     }
-    let out = run(&["rev-list", "--count", "HEAD..@{upstream}"])?;
+    // A checkout on another branch was installed from a worktree of the
+    // default branch, which recorded what it built (catalog's checkout_done).
+    let installed = run(&[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "refs/vinopilot/installed",
+    ])?;
+    let (range, missing) = if installed.status.success() {
+        (
+            "refs/vinopilot/installed..refs/remotes/origin/HEAD",
+            "origin has no default branch",
+        )
+    } else {
+        ("HEAD..@{upstream}", "the branch has no upstream")
+    };
+    let out = run(&["rev-list", "--count", range])?;
     if !out.status.success() {
-        return Err("the branch has no upstream".into());
+        return Err(missing.into());
     }
     String::from_utf8_lossy(&out.stdout)
         .trim()

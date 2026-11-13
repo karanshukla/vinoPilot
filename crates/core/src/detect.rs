@@ -80,6 +80,15 @@ impl Paths {
     pub fn checkout(&self, id: Id) -> PathBuf {
         self.source_root.join(id.checkout_name())
     }
+
+    /// Where a source install builds the default branch when the checkout
+    /// is on another one. Not under ~/.cache: vinoWhisper and vinoPop run
+    /// from it.
+    pub fn worktree(&self, id: Id) -> PathBuf {
+        self.home
+            .join(".local/share/vinopilot/worktrees")
+            .join(id.checkout_name())
+    }
 }
 
 /// The installs `cargo install` keeps in `~/.cargo/.crates.toml`: crate name

@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use crate::catalog::{Action, Channel, Id, Step};
+use crate::detect::Paths;
 
 /// Called with each line of output as it arrives, then with `None` when
 /// the job ends: the window repaints, the CLI prints.
@@ -42,14 +43,16 @@ pub struct Job {
 /// What a step needs from the environment instead of formatted into it.
 pub struct Env {
     pub checkout: PathBuf,
+    pub worktree: PathBuf,
     pub repo_url: String,
     pub release: String,
 }
 
 impl Env {
-    pub fn for_id(id: Id, checkout: PathBuf) -> Self {
+    pub fn for_id(id: Id, paths: &Paths) -> Self {
         Env {
-            checkout,
+            checkout: paths.checkout(id),
+            worktree: paths.worktree(id),
             repo_url: format!("https://github.com/{}.git", id.repo()),
             release: release_base(id),
         }
@@ -91,6 +94,7 @@ pub fn clean(line: &str) -> String {
 fn command(step: &Step, env: &Env) -> Command {
     let vars = [
         ("CHECKOUT", env.checkout.to_string_lossy().into_owned()),
+        ("WORKTREE", env.worktree.to_string_lossy().into_owned()),
         ("REPO_URL", env.repo_url.clone()),
         ("RELEASE", env.release.clone()),
         ("NO_COLOR", "1".into()),
