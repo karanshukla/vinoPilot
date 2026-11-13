@@ -414,9 +414,14 @@ fi"#;
 /// is an error to Flatpak, `--reinstall` or not (1.14, 2026-11-09), and
 /// nothing to do here. A running window keeps its files until it closes:
 /// Flatpak removes a deployment that's in use afterwards.
+///
+/// `-y`, not `--noninteractive`: the latter also stops polkit from asking
+/// for a password, and a system-wide bundle install always needs one
+/// (`install-bundle` is `auth_admin`, and Flatpak's rule for the admin group
+/// doesn't cover it), so it failed with "not allowed for user".
 const PILOT_FLATPAK: &str = r#"need flatpak "it's what this vinoPilot was installed with"
 fetch vinopilot-x86_64.flatpak
-if out="$(LC_ALL=C flatpak install "$(flatpak_scope)" --noninteractive "$tmp/vinopilot-x86_64.flatpak" 2>&1)"; then
+if out="$(LC_ALL=C flatpak install "$(flatpak_scope)" -y "$tmp/vinopilot-x86_64.flatpak" 2>&1)"; then
     echo "$out"
 else
     echo "$out"
@@ -661,7 +666,7 @@ rm -f "$BIN/vinopilot" "$BIN/vinopilot-gui" "$BIN/vinopilot-upgrade"
             vec![s(&format!("{PILOT_PACKAGE}{PILOT_FLATPAK}"))]
         }
         (Id::App(App::Pilot), Flatpak, Uninstall) => vec![s(&format!(
-            "{PILOT_PACKAGE}flatpak uninstall \"$(flatpak_scope)\" --noninteractive {PILOT_APP_ID}"
+            "{PILOT_PACKAGE}flatpak uninstall \"$(flatpak_scope)\" -y {PILOT_APP_ID}"
         ))],
 
         // vinoUserInterface: a library, so "installed" means a checkout that builds.
