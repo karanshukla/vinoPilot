@@ -95,6 +95,15 @@ impl Id {
         self == Id::App(App::AuthFace)
     }
 
+    /// How a source install handles a checkout that isn't on its default
+    /// branch.
+    pub fn off_branch(self) -> OffBranch {
+        match self {
+            Id::App(App::Whisper) | Id::App(App::Pop) | Id::Ui => OffBranch::Switch,
+            _ => OffBranch::Worktree,
+        }
+    }
+
     pub fn channels(self) -> Vec<Channel> {
         let mut all = Vec::new();
         if self != Id::Ui {
@@ -187,6 +196,31 @@ impl Action {
     }
 }
 
+/// Where a source install builds from when the checkout is on another
+/// branch. Either way the checkout's own branch is never pulled; on the
+/// default branch both are a plain `git pull --ff-only`. Reaches the
+/// prelude's `checkout` as `$OFF_BRANCH`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffBranch {
+    /// A new path: the default branch in a worktree at `$WORKTREE`, removed
+    /// after the install. For installs that copy everything out.
+    Worktree,
+    /// The checkout's own path, switched to the default branch with its
+    /// changes stashed, and left there. For installs that keep running from
+    /// it (venv links, launchers pointing into it), where a worktree would
+    /// be a second copy the app quietly runs from.
+    Switch,
+}
+
+impl OffBranch {
+    pub fn name(self) -> &'static str {
+        match self {
+            OffBranch::Worktree => "worktree",
+            OffBranch::Switch => "switch",
+        }
+    }
+}
+
 /// One shell script, run with `bash -c` as the user, or as root through
 /// pkexec.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,9 +245,9 @@ impl Step {
     }
 }
 
-/// Every step starts with these. `$CHECKOUT`, `$REPO_URL` and `$RELEASE`
-/// come from the environment (see [`crate::job`]), never from formatting
-/// paths into the script.
+/// Every step starts with these. `$CHECKOUT`, `$WORKTREE`, `$OFF_BRANCH`,
+/// `$REPO_URL` and `$RELEASE` come from the environment (see
+/// [`crate::job`]), never from formatting paths into the script.
 const PRELUDE: &str = r#"set -euo pipefail
 BIN="$HOME/.local/bin"
 # release_run ASSET [ARGS...]: the release's own one-line installer, which
@@ -225,15 +259,82 @@ release_run() {
     bash "$f" "$@" </dev/null
     rm -f "$f"
 }
-# The checkout, cloned or fast-forwarded.
+# checkout: the source to install from. The base path is the checkout,
+# cloned or fast-forwarded on its default branch. On another branch,
+# $OFF_BRANCH picks the path (catalog's OffBranch): checkout_worktree
+# points CHECKOUT at a new one for the rest of the step, checkout_switch
+# keeps it. checkout_done, a step of its own, ends either.
 checkout() {
-    if [ -d "$CHECKOUT/.git" ]; then
-        echo "== git pull in $CHECKOUT"
-        git -C "$CHECKOUT" pull --ff-only
-    else
+    if [ ! -d "$CHECKOUT/.git" ]; then
         echo "== git clone $REPO_URL $CHECKOUT"
         mkdir -p "$(dirname "$CHECKOUT")"
         git clone "$REPO_URL" "$CHECKOUT"
+        return
+    fi
+    local main branch
+    main="$(default_branch)"
+    branch="$(git -C "$CHECKOUT" symbolic-ref --quiet --short HEAD || true)"
+    if [ "$branch" != "$main" ]; then
+        branch="${branch:-$(git -C "$CHECKOUT" rev-parse --short HEAD)}"
+        case "$OFF_BRANCH" in
+            worktree) checkout_worktree "$main" "$branch"; return ;;
+            switch) checkout_switch "$main" "$branch" ;;
+            *) echo "✗ OFF_BRANCH is '$OFF_BRANCH'" >&2; return 1 ;;
+        esac
+    fi
+    drop_worktree
+    echo "== git pull in $CHECKOUT"
+    git -C "$CHECKOUT" pull --ff-only
+}
+# checkout_worktree MAIN FROM: MAIN in $WORKTREE, which becomes CHECKOUT.
+checkout_worktree() {
+    echo "== $CHECKOUT is on $2, not $1: installing $1 from $WORKTREE"
+    git -C "$CHECKOUT" fetch origin "$1"
+    drop_worktree
+    mkdir -p "$(dirname "$WORKTREE")"
+    git -C "$CHECKOUT" worktree add --detach "$WORKTREE" "origin/$1"
+    CHECKOUT="$WORKTREE"
+}
+# checkout_switch MAIN FROM: the checkout onto MAIN, stashing what FROM has
+# that isn't committed. It stays on MAIN, then is pulled as on the base path.
+checkout_switch() {
+    echo "== $CHECKOUT is on $2, not $1: switching it to $1, the install runs from it"
+    local back="git switch $2"
+    git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$2" || back="git switch --detach $2"
+    if [ -n "$(git -C "$CHECKOUT" status --porcelain)" ]; then
+        git -C "$CHECKOUT" stash push --include-untracked -m "vinopilot: $2 before switching to $1"
+        back="$back && git stash pop"
+    fi
+    git -C "$CHECKOUT" switch "$1"
+    echo "Back to your work: $back (in $CHECKOUT). The installed app then runs that code."
+}
+# The branch origin's HEAD names, "main" when git can't tell.
+default_branch() {
+    local ref
+    ref="$(git -C "$CHECKOUT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" ||
+        { git -C "$CHECKOUT" remote set-head origin --auto >/dev/null 2>&1 &&
+            ref="$(git -C "$CHECKOUT" symbolic-ref --quiet --short refs/remotes/origin/HEAD)"; } ||
+        ref=origin/main
+    echo "${ref#origin/}"
+}
+# Where the step's install runs from: $WORKTREE when checkout used one.
+source_dir() { if [ -e "$WORKTREE/.git" ]; then echo "$WORKTREE"; else echo "$CHECKOUT"; fi; }
+drop_worktree() {
+    [ -e "$WORKTREE" ] || return 0
+    git -C "$CHECKOUT" worktree remove --force "$WORKTREE" 2>/dev/null || rm -rf "$WORKTREE" ||
+        { echo "✗ Couldn't remove $WORKTREE" >&2; return 0; }
+    git -C "$CHECKOUT" worktree prune
+    echo "Removed $WORKTREE"
+}
+# After an install from $WORKTREE: records its commit as
+# refs/vinopilot/installed, which `check` counts from, and removes it.
+# After one from the checkout, drops the record.
+checkout_done() {
+    if [ -e "$WORKTREE/.git" ]; then
+        git -C "$CHECKOUT" update-ref refs/vinopilot/installed "$(git -C "$WORKTREE" rev-parse HEAD)"
+        drop_worktree
+    else
+        git -C "$CHECKOUT" update-ref -d refs/vinopilot/installed 2>/dev/null || true
     fi
 }
 need() { command -v "$1" >/dev/null || { echo "✗ $1 isn't installed: $2" >&2; exit 1; }; }
@@ -267,6 +368,7 @@ follow_tui() {
 # that's nowhere else.
 trash_checkout() {
     [ -d "$CHECKOUT/.git" ] || { echo "No checkout at $CHECKOUT"; return 0; }
+    drop_worktree
     local why=""
     if [ -n "$(git -C "$CHECKOUT" status --porcelain)" ]; then
         why="it has uncommitted changes"
@@ -452,7 +554,8 @@ pub fn uninstall_note(id: Id, channel: Channel) -> String {
 /// The steps for `action` on `id` installed (or to be installed) through
 /// `channel`. Empty when that combination doesn't exist. Updating or
 /// uninstalling vinoPilot takes the terminal UI along. Uninstalling a
-/// source install ends by moving its checkout to the trash.
+/// source install ends by moving its checkout to the trash; installing or
+/// updating one ends with `checkout_done`.
 pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
     let mut steps = app_steps(id, channel, action);
     if id == Id::App(App::Pilot) && !steps.is_empty() {
@@ -468,6 +571,9 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         && !steps.is_empty()
     {
         steps.push(Step::user("trash_checkout"));
+    }
+    if channel == Channel::Source && action != Action::Uninstall && !steps.is_empty() {
+        steps.push(Step::user("checkout_done"));
     }
     steps
 }
@@ -588,7 +694,7 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         )],
         (Id::App(App::AuthFace), Source, Install | Update) => vec![
             s("checkout"),
-            r(r#"cd "$CHECKOUT"; bash ./deploy.sh </dev/null"#),
+            r(r#"cd "$(source_dir)"; bash ./deploy.sh </dev/null"#),
         ],
         (Id::App(App::AuthFace), _, Uninstall) => vec![r(
             r#"if [ -x /usr/local/bin/vinoauthface-uninstall ]; then /usr/local/bin/vinoauthface-uninstall; else bash "$CHECKOUT/uninstall.sh"; fi"#,
@@ -996,5 +1102,103 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn installs_that_run_from_the_checkout_switch_it() {
+        let switch: Vec<_> = Id::ALL
+            .into_iter()
+            .filter(|id| id.off_branch() == OffBranch::Switch)
+            .collect();
+        assert_eq!(switch, [Id::App(App::Whisper), Id::App(App::Pop), Id::Ui]);
+    }
+
+    /// The prelude's checkout on a real repo: a checkout on a feature branch
+    /// is left alone, the default branch is built in the worktree, and
+    /// checkout_done records it and removes the worktree unless kept.
+    #[test]
+    fn a_checkout_off_the_default_branch_installs_from_a_worktree() {
+        if std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let tmp = std::env::temp_dir().join(format!("vinopilot-worktree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let run_as = |off_branch: OffBranch, script: &str| {
+            let out = std::process::Command::new("bash")
+                .args(["-c", &format!("{PRELUDE}\n{script}")])
+                .current_dir(&tmp)
+                .env("CHECKOUT", tmp.join("checkout"))
+                .env("WORKTREE", tmp.join("share/worktrees/checkout"))
+                .env("OFF_BRANCH", off_branch.name())
+                .env("REPO_URL", tmp.join("origin"))
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            assert!(
+                out.status.success(),
+                "{script}\n{stdout}{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            stdout
+        };
+        let run = |script: &str| run_as(OffBranch::Worktree, script);
+        run(
+            r#"git init -q -b main origin && git -C origin commit -q --allow-empty -m one
+checkout
+git -C "$CHECKOUT" switch -q -c feature && echo work > "$CHECKOUT/wip"
+git -C origin commit -q --allow-empty -m two"#,
+        );
+
+        let out =
+            run(r#"checkout; echo "building in $CHECKOUT"; git -C "$CHECKOUT" log -1 --format=%s"#);
+        assert!(out.contains("is on feature, not main"), "{out}");
+        assert!(out.contains("share/worktrees/checkout\n"), "{out}");
+        assert!(out.ends_with("two\n"), "{out}");
+        assert_eq!(
+            run(r#"source_dir; git -C "$CHECKOUT" branch --show-current; cat "$CHECKOUT/wip""#),
+            format!(
+                "{}\nfeature\nwork\n",
+                tmp.join("share/worktrees/checkout").display()
+            )
+        );
+        run("checkout_done");
+        assert!(!tmp.join("share/worktrees/checkout").exists());
+        assert_eq!(
+            run(r#"git -C "$CHECKOUT" log -1 --format=%s refs/vinopilot/installed"#),
+            "two\n"
+        );
+
+        // Switch: the checkout itself goes to main, its work stashed, and
+        // the record goes.
+        let out = run_as(OffBranch::Switch, "checkout; checkout_done");
+        assert!(
+            out.contains("Back to your work: git switch feature && git stash pop"),
+            "{out}"
+        );
+        let out = run(
+            r#"git -C "$CHECKOUT" branch --show-current; git -C "$CHECKOUT" log -1 --format=%s
+git -C "$CHECKOUT" stash list --format=%s; [ -e "$CHECKOUT/wip" ] || echo stashed
+git -C "$CHECKOUT" rev-parse -q --verify refs/vinopilot/installed || echo gone"#,
+        );
+        assert_eq!(
+            out,
+            "main\ntwo\nOn feature: vinopilot: feature before switching to main\nstashed\ngone\n"
+        );
+        assert!(!tmp.join("share/worktrees/checkout").exists());
+        // On main already, either is a plain pull.
+        let out = run_as(OffBranch::Switch, "checkout");
+        assert!(out.contains("== git pull in"), "{out}");
+        assert!(!out.contains("switching"), "{out}");
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

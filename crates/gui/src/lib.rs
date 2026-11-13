@@ -142,7 +142,7 @@ impl Pilot {
         if steps.is_empty() {
             return;
         }
-        let env = Env::for_id(id, self.paths().checkout(id));
+        let env = Env::for_id(id, &self.paths());
         let ctx = ctx.clone();
         let notify = Arc::new(move |_: Option<&str>| ctx.request_repaint());
         self.job = Some(Job::start(id, channel, action, steps, env, notify));
