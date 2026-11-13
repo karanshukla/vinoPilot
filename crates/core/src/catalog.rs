@@ -225,10 +225,12 @@ release_run() {
     bash "$f" "$@" </dev/null
     rm -f "$f"
 }
-# The source to install from: the checkout, cloned or fast-forwarded. A
-# checkout on another branch stays as it is: its default branch is checked
-# out in $WORKTREE instead, and CHECKOUT points there for the rest of the
-# step. checkout_done, a step of its own, ends it.
+# checkout [here]: the source to install from, the checkout cloned or
+# fast-forwarded. A checkout on another branch stays as it is: its default
+# branch is checked out in $WORKTREE instead, and CHECKOUT points there for
+# the rest of the step. With `here`, for installs that keep running from
+# the checkout, the checkout itself is switched to the default branch, its
+# changes stashed first. checkout_done, a step of its own, ends it.
 checkout() {
     if [ ! -d "$CHECKOUT/.git" ]; then
         echo "== git clone $REPO_URL $CHECKOUT"
@@ -239,6 +241,10 @@ checkout() {
     local main branch
     main="$(default_branch)"
     branch="$(git -C "$CHECKOUT" symbolic-ref --quiet --short HEAD || true)"
+    if [ "$branch" != "$main" ] && [ "${1:-}" = here ]; then
+        switch_checkout "$main" "${branch:-$(git -C "$CHECKOUT" rev-parse --short HEAD)}"
+        branch="$main"
+    fi
     if [ "$branch" = "$main" ]; then
         drop_worktree
         echo "== git pull in $CHECKOUT"
@@ -247,14 +253,23 @@ checkout() {
     fi
     echo "== $CHECKOUT is on ${branch:-a detached HEAD}, not $main: installing $main from $WORKTREE"
     git -C "$CHECKOUT" fetch origin "$main"
-    if [ -e "$WORKTREE/.git" ] && [ "$(git_common_dir "$WORKTREE")" = "$(git_common_dir "$CHECKOUT")" ]; then
-        git -C "$WORKTREE" checkout --quiet --force --detach "origin/$main"
-    else
-        drop_worktree
-        mkdir -p "$(dirname "$WORKTREE")"
-        git -C "$CHECKOUT" worktree add --detach "$WORKTREE" "origin/$main"
-    fi
+    drop_worktree
+    mkdir -p "$(dirname "$WORKTREE")"
+    git -C "$CHECKOUT" worktree add --detach "$WORKTREE" "origin/$main"
     CHECKOUT="$WORKTREE"
+}
+# switch_checkout MAIN FROM: the checkout onto MAIN, stashing what FROM has
+# that isn't committed. It stays on MAIN: the install runs from it.
+switch_checkout() {
+    echo "== $CHECKOUT is on $2, not $1: switching it to $1, the install runs from it"
+    local back="git switch $2"
+    git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$2" || back="git switch --detach $2"
+    if [ -n "$(git -C "$CHECKOUT" status --porcelain)" ]; then
+        git -C "$CHECKOUT" stash push --include-untracked -m "vinopilot: $2 before switching to $1"
+        back="$back && git stash pop"
+    fi
+    git -C "$CHECKOUT" switch "$1"
+    echo "Back to your work: $back (in $CHECKOUT). The installed app then runs that code."
 }
 # The branch origin's HEAD names, "main" when git can't tell.
 default_branch() {
@@ -265,7 +280,6 @@ default_branch() {
         ref=origin/main
     echo "${ref#origin/}"
 }
-git_common_dir() { git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true; }
 # Where the step's install runs from: $WORKTREE when checkout used one.
 source_dir() { if [ -e "$WORKTREE/.git" ]; then echo "$WORKTREE"; else echo "$CHECKOUT"; fi; }
 drop_worktree() {
@@ -275,14 +289,13 @@ drop_worktree() {
     git -C "$CHECKOUT" worktree prune
     echo "Removed $WORKTREE"
 }
-# checkout_done [keep]: after an install from $WORKTREE, records its commit
-# as refs/vinopilot/installed, which `check` counts from, then removes it
-# unless the install runs from it (keep). After one from the checkout,
-# drops the record.
+# After an install from $WORKTREE: records its commit as
+# refs/vinopilot/installed, which `check` counts from, and removes it.
+# After one from the checkout, drops the record.
 checkout_done() {
     if [ -e "$WORKTREE/.git" ]; then
         git -C "$CHECKOUT" update-ref refs/vinopilot/installed "$(git -C "$WORKTREE" rev-parse HEAD)"
-        [ "${1:-}" = keep ] || drop_worktree
+        drop_worktree
     else
         git -C "$CHECKOUT" update-ref -d refs/vinopilot/installed 2>/dev/null || true
     fi
@@ -523,21 +536,9 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         steps.push(Step::user("trash_checkout"));
     }
     if channel == Channel::Source && action != Action::Uninstall && !steps.is_empty() {
-        steps.push(Step::user(if runs_from_source(id) {
-            "checkout_done keep"
-        } else {
-            "checkout_done"
-        }));
+        steps.push(Step::user("checkout_done"));
     }
     steps
-}
-
-/// Source installs that keep pointing into the folder they ran from:
-/// vinoWhisper's venv links and server unit, vinoPop's launcher and menu
-/// entries, and the library's gallery build. A worktree they were installed
-/// from has to stay.
-fn runs_from_source(id: Id) -> bool {
-    matches!(id, Id::App(App::Whisper) | Id::App(App::Pop) | Id::Ui)
 }
 
 fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
@@ -551,9 +552,10 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::App(App::Whisper), Release, Update) => vec![s(
             r#"if [ -x "$BIN/vinowhisper-upgrade" ]; then "$BIN/vinowhisper-upgrade" </dev/null; else release_run install.sh; fi"#,
         )],
+        // Its venv links and server unit point into the checkout: `here`.
         (Id::App(App::Whisper), Source, Install | Update) => {
             vec![s(
-                r#"checkout; "$CHECKOUT/scripts/install.sh" --yes --gui </dev/null"#,
+                r#"checkout here; "$CHECKOUT/scripts/install.sh" --yes --gui </dev/null"#,
             )]
         }
         (Id::App(App::Whisper), Package, Install) => vec![s(
@@ -588,8 +590,11 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::App(App::Pop), Release, Uninstall) => vec![s(
             r#"if [ -x "$BIN/vinopop-upgrade" ]; then "$BIN/vinopop-upgrade" --uninstall </dev/null; else release_run get.sh --uninstall; fi"#,
         )],
+        // Its launcher and menu entries run the checkout's script: `here`.
         (Id::App(App::Pop), Source, Install | Update) => {
-            vec![s(r#"checkout; bash "$CHECKOUT/install.sh" </dev/null"#)]
+            vec![s(
+                r#"checkout here; bash "$CHECKOUT/install.sh" </dev/null"#,
+            )]
         }
         (Id::App(App::Pop), Source, Uninstall) => {
             vec![s(r#"bash "$CHECKOUT/install.sh" --uninstall </dev/null"#)]
@@ -738,8 +743,9 @@ rm -f "$BIN/vinopilot" "$BIN/vinopilot-gui" "$BIN/vinopilot-upgrade"
         ))],
 
         // vinoUserInterface: a library, so "installed" means a checkout that builds.
+        // The gallery is built and run in the checkout: `here`.
         (Id::Ui, Source, Install | Update) => vec![s(
-            r#"checkout; need_cargo; cd "$CHECKOUT"; cargo build --locked --example gallery; echo "Run it: cargo run --example gallery (in $CHECKOUT)""#,
+            r#"checkout here; need_cargo; cd "$CHECKOUT"; cargo build --locked --example gallery; echo "Run it: cargo run --example gallery (in $CHECKOUT)""#,
         )],
         (Id::Ui, Source, Uninstall) => vec![s("trash_checkout")],
 
@@ -1066,6 +1072,25 @@ mod tests {
         }
     }
 
+    /// Only installs that run from the checkout move it off the user's
+    /// branch; the rest build in a worktree.
+    #[test]
+    fn only_installs_that_run_from_the_checkout_switch_it() {
+        for id in Id::ALL {
+            for action in [Action::Install, Action::Update] {
+                let here = steps(id, Channel::Source, action)
+                    .iter()
+                    .any(|s| s.script.contains("checkout here"));
+                assert_eq!(
+                    here,
+                    matches!(id, Id::App(App::Whisper) | Id::App(App::Pop) | Id::Ui),
+                    "{} {action:?}",
+                    id.name()
+                );
+            }
+        }
+    }
+
     /// The prelude's checkout on a real repo: a checkout on a feature branch
     /// is left alone, the default branch is built in the worktree, and
     /// checkout_done records it and removes the worktree unless kept.
@@ -1115,8 +1140,6 @@ git -C origin commit -q --allow-empty -m two"#,
         assert!(out.contains("is on feature, not main"), "{out}");
         assert!(out.contains("share/worktrees/checkout\n"), "{out}");
         assert!(out.ends_with("two\n"), "{out}");
-        // A second update reuses the worktree.
-        run("checkout");
         assert_eq!(
             run(r#"source_dir; git -C "$CHECKOUT" branch --show-current; cat "$CHECKOUT/wip""#),
             format!(
@@ -1124,9 +1147,6 @@ git -C origin commit -q --allow-empty -m two"#,
                 tmp.join("share/worktrees/checkout").display()
             )
         );
-
-        run("checkout_done keep");
-        assert!(tmp.join("share/worktrees/checkout/.git").exists());
         run("checkout_done");
         assert!(!tmp.join("share/worktrees/checkout").exists());
         assert_eq!(
@@ -1134,16 +1154,27 @@ git -C origin commit -q --allow-empty -m two"#,
             "two\n"
         );
 
-        // Back on main: a plain pull, and the record goes.
-        run(
-            r#"git -C "$CHECKOUT" stash -q -u; git -C "$CHECKOUT" switch -q main
-checkout; checkout_done"#,
+        // `here`: the checkout itself goes to main, its work stashed, and
+        // the record goes.
+        let out = run("checkout here; checkout_done");
+        assert!(
+            out.contains("Back to your work: git switch feature && git stash pop"),
+            "{out}"
         );
         let out = run(
-            r#"git -C "$CHECKOUT" log -1 --format=%s; git -C "$CHECKOUT" rev-parse -q --verify refs/vinopilot/installed || echo gone"#,
+            r#"git -C "$CHECKOUT" branch --show-current; git -C "$CHECKOUT" log -1 --format=%s
+git -C "$CHECKOUT" stash list --format=%s; [ -e "$CHECKOUT/wip" ] || echo stashed
+git -C "$CHECKOUT" rev-parse -q --verify refs/vinopilot/installed || echo gone"#,
         );
-        assert_eq!(out, "two\ngone\n");
+        assert_eq!(
+            out,
+            "main\ntwo\nOn feature: vinopilot: feature before switching to main\nstashed\ngone\n"
+        );
         assert!(!tmp.join("share/worktrees/checkout").exists());
+        // On main already, `here` is a plain pull.
+        let out = run("checkout here");
+        assert!(out.contains("== git pull in"), "{out}");
+        assert!(!out.contains("switching"), "{out}");
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }
