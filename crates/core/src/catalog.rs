@@ -95,6 +95,15 @@ impl Id {
         self == Id::App(App::AuthFace)
     }
 
+    /// How a source install handles a checkout that isn't on its default
+    /// branch.
+    pub fn off_branch(self) -> OffBranch {
+        match self {
+            Id::App(App::Whisper) | Id::App(App::Pop) | Id::Ui => OffBranch::Switch,
+            _ => OffBranch::Worktree,
+        }
+    }
+
     pub fn channels(self) -> Vec<Channel> {
         let mut all = Vec::new();
         if self != Id::Ui {
@@ -187,6 +196,31 @@ impl Action {
     }
 }
 
+/// Where a source install builds from when the checkout is on another
+/// branch. Either way the checkout's own branch is never pulled; on the
+/// default branch both are a plain `git pull --ff-only`. Reaches the
+/// prelude's `checkout` as `$OFF_BRANCH`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffBranch {
+    /// A new path: the default branch in a worktree at `$WORKTREE`, removed
+    /// after the install. For installs that copy everything out.
+    Worktree,
+    /// The checkout's own path, switched to the default branch with its
+    /// changes stashed, and left there. For installs that keep running from
+    /// it (venv links, launchers pointing into it), where a worktree would
+    /// be a second copy the app quietly runs from.
+    Switch,
+}
+
+impl OffBranch {
+    pub fn name(self) -> &'static str {
+        match self {
+            OffBranch::Worktree => "worktree",
+            OffBranch::Switch => "switch",
+        }
+    }
+}
+
 /// One shell script, run with `bash -c` as the user, or as root through
 /// pkexec.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,9 +245,9 @@ impl Step {
     }
 }
 
-/// Every step starts with these. `$CHECKOUT`, `$WORKTREE`, `$REPO_URL` and
-/// `$RELEASE` come from the environment (see [`crate::job`]), never from
-/// formatting paths into the script.
+/// Every step starts with these. `$CHECKOUT`, `$WORKTREE`, `$OFF_BRANCH`,
+/// `$REPO_URL` and `$RELEASE` come from the environment (see
+/// [`crate::job`]), never from formatting paths into the script.
 const PRELUDE: &str = r#"set -euo pipefail
 BIN="$HOME/.local/bin"
 # release_run ASSET [ARGS...]: the release's own one-line installer, which
@@ -225,12 +259,11 @@ release_run() {
     bash "$f" "$@" </dev/null
     rm -f "$f"
 }
-# checkout [here]: the source to install from, the checkout cloned or
-# fast-forwarded. A checkout on another branch stays as it is: its default
-# branch is checked out in $WORKTREE instead, and CHECKOUT points there for
-# the rest of the step. With `here`, for installs that keep running from
-# the checkout, the checkout itself is switched to the default branch, its
-# changes stashed first. checkout_done, a step of its own, ends it.
+# checkout: the source to install from. The base path is the checkout,
+# cloned or fast-forwarded on its default branch. On another branch,
+# $OFF_BRANCH picks the path (catalog's OffBranch): checkout_worktree
+# points CHECKOUT at a new one for the rest of the step, checkout_switch
+# keeps it. checkout_done, a step of its own, ends either.
 checkout() {
     if [ ! -d "$CHECKOUT/.git" ]; then
         echo "== git clone $REPO_URL $CHECKOUT"
@@ -241,26 +274,30 @@ checkout() {
     local main branch
     main="$(default_branch)"
     branch="$(git -C "$CHECKOUT" symbolic-ref --quiet --short HEAD || true)"
-    if [ "$branch" != "$main" ] && [ "${1:-}" = here ]; then
-        switch_checkout "$main" "${branch:-$(git -C "$CHECKOUT" rev-parse --short HEAD)}"
-        branch="$main"
+    if [ "$branch" != "$main" ]; then
+        branch="${branch:-$(git -C "$CHECKOUT" rev-parse --short HEAD)}"
+        case "$OFF_BRANCH" in
+            worktree) checkout_worktree "$main" "$branch"; return ;;
+            switch) checkout_switch "$main" "$branch" ;;
+            *) echo "✗ OFF_BRANCH is '$OFF_BRANCH'" >&2; return 1 ;;
+        esac
     fi
-    if [ "$branch" = "$main" ]; then
-        drop_worktree
-        echo "== git pull in $CHECKOUT"
-        git -C "$CHECKOUT" pull --ff-only
-        return
-    fi
-    echo "== $CHECKOUT is on ${branch:-a detached HEAD}, not $main: installing $main from $WORKTREE"
-    git -C "$CHECKOUT" fetch origin "$main"
+    drop_worktree
+    echo "== git pull in $CHECKOUT"
+    git -C "$CHECKOUT" pull --ff-only
+}
+# checkout_worktree MAIN FROM: MAIN in $WORKTREE, which becomes CHECKOUT.
+checkout_worktree() {
+    echo "== $CHECKOUT is on $2, not $1: installing $1 from $WORKTREE"
+    git -C "$CHECKOUT" fetch origin "$1"
     drop_worktree
     mkdir -p "$(dirname "$WORKTREE")"
-    git -C "$CHECKOUT" worktree add --detach "$WORKTREE" "origin/$main"
+    git -C "$CHECKOUT" worktree add --detach "$WORKTREE" "origin/$1"
     CHECKOUT="$WORKTREE"
 }
-# switch_checkout MAIN FROM: the checkout onto MAIN, stashing what FROM has
-# that isn't committed. It stays on MAIN: the install runs from it.
-switch_checkout() {
+# checkout_switch MAIN FROM: the checkout onto MAIN, stashing what FROM has
+# that isn't committed. It stays on MAIN, then is pulled as on the base path.
+checkout_switch() {
     echo "== $CHECKOUT is on $2, not $1: switching it to $1, the install runs from it"
     local back="git switch $2"
     git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$2" || back="git switch --detach $2"
@@ -552,10 +589,9 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::App(App::Whisper), Release, Update) => vec![s(
             r#"if [ -x "$BIN/vinowhisper-upgrade" ]; then "$BIN/vinowhisper-upgrade" </dev/null; else release_run install.sh; fi"#,
         )],
-        // Its venv links and server unit point into the checkout: `here`.
         (Id::App(App::Whisper), Source, Install | Update) => {
             vec![s(
-                r#"checkout here; "$CHECKOUT/scripts/install.sh" --yes --gui </dev/null"#,
+                r#"checkout; "$CHECKOUT/scripts/install.sh" --yes --gui </dev/null"#,
             )]
         }
         (Id::App(App::Whisper), Package, Install) => vec![s(
@@ -590,11 +626,8 @@ fn app_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
         (Id::App(App::Pop), Release, Uninstall) => vec![s(
             r#"if [ -x "$BIN/vinopop-upgrade" ]; then "$BIN/vinopop-upgrade" --uninstall </dev/null; else release_run get.sh --uninstall; fi"#,
         )],
-        // Its launcher and menu entries run the checkout's script: `here`.
         (Id::App(App::Pop), Source, Install | Update) => {
-            vec![s(
-                r#"checkout here; bash "$CHECKOUT/install.sh" </dev/null"#,
-            )]
+            vec![s(r#"checkout; bash "$CHECKOUT/install.sh" </dev/null"#)]
         }
         (Id::App(App::Pop), Source, Uninstall) => {
             vec![s(r#"bash "$CHECKOUT/install.sh" --uninstall </dev/null"#)]
@@ -743,9 +776,8 @@ rm -f "$BIN/vinopilot" "$BIN/vinopilot-gui" "$BIN/vinopilot-upgrade"
         ))],
 
         // vinoUserInterface: a library, so "installed" means a checkout that builds.
-        // The gallery is built and run in the checkout: `here`.
         (Id::Ui, Source, Install | Update) => vec![s(
-            r#"checkout here; need_cargo; cd "$CHECKOUT"; cargo build --locked --example gallery; echo "Run it: cargo run --example gallery (in $CHECKOUT)""#,
+            r#"checkout; need_cargo; cd "$CHECKOUT"; cargo build --locked --example gallery; echo "Run it: cargo run --example gallery (in $CHECKOUT)""#,
         )],
         (Id::Ui, Source, Uninstall) => vec![s("trash_checkout")],
 
@@ -1072,23 +1104,13 @@ mod tests {
         }
     }
 
-    /// Only installs that run from the checkout move it off the user's
-    /// branch; the rest build in a worktree.
     #[test]
-    fn only_installs_that_run_from_the_checkout_switch_it() {
-        for id in Id::ALL {
-            for action in [Action::Install, Action::Update] {
-                let here = steps(id, Channel::Source, action)
-                    .iter()
-                    .any(|s| s.script.contains("checkout here"));
-                assert_eq!(
-                    here,
-                    matches!(id, Id::App(App::Whisper) | Id::App(App::Pop) | Id::Ui),
-                    "{} {action:?}",
-                    id.name()
-                );
-            }
-        }
+    fn installs_that_run_from_the_checkout_switch_it() {
+        let switch: Vec<_> = Id::ALL
+            .into_iter()
+            .filter(|id| id.off_branch() == OffBranch::Switch)
+            .collect();
+        assert_eq!(switch, [Id::App(App::Whisper), Id::App(App::Pop), Id::Ui]);
     }
 
     /// The prelude's checkout on a real repo: a checkout on a feature branch
@@ -1106,12 +1128,13 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("vinopilot-worktree-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        let run = |script: &str| {
+        let run_as = |off_branch: OffBranch, script: &str| {
             let out = std::process::Command::new("bash")
                 .args(["-c", &format!("{PRELUDE}\n{script}")])
                 .current_dir(&tmp)
                 .env("CHECKOUT", tmp.join("checkout"))
                 .env("WORKTREE", tmp.join("share/worktrees/checkout"))
+                .env("OFF_BRANCH", off_branch.name())
                 .env("REPO_URL", tmp.join("origin"))
                 .env("GIT_CONFIG_GLOBAL", "/dev/null")
                 .env("GIT_AUTHOR_NAME", "t")
@@ -1128,6 +1151,7 @@ mod tests {
             );
             stdout
         };
+        let run = |script: &str| run_as(OffBranch::Worktree, script);
         run(
             r#"git init -q -b main origin && git -C origin commit -q --allow-empty -m one
 checkout
@@ -1154,9 +1178,9 @@ git -C origin commit -q --allow-empty -m two"#,
             "two\n"
         );
 
-        // `here`: the checkout itself goes to main, its work stashed, and
+        // Switch: the checkout itself goes to main, its work stashed, and
         // the record goes.
-        let out = run("checkout here; checkout_done");
+        let out = run_as(OffBranch::Switch, "checkout; checkout_done");
         assert!(
             out.contains("Back to your work: git switch feature && git stash pop"),
             "{out}"
@@ -1171,8 +1195,8 @@ git -C "$CHECKOUT" rev-parse -q --verify refs/vinopilot/installed || echo gone"#
             "main\ntwo\nOn feature: vinopilot: feature before switching to main\nstashed\ngone\n"
         );
         assert!(!tmp.join("share/worktrees/checkout").exists());
-        // On main already, `here` is a plain pull.
-        let out = run("checkout here");
+        // On main already, either is a plain pull.
+        let out = run_as(OffBranch::Switch, "checkout");
         assert!(out.contains("== git pull in"), "{out}");
         assert!(!out.contains("switching"), "{out}");
         std::fs::remove_dir_all(&tmp).unwrap();

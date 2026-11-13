@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-use crate::catalog::{Action, Channel, Id, Step};
+use crate::catalog::{Action, Channel, Id, OffBranch, Step};
 use crate::detect::Paths;
 
 /// Called with each line of output as it arrives, then with `None` when
@@ -44,6 +44,7 @@ pub struct Job {
 pub struct Env {
     pub checkout: PathBuf,
     pub worktree: PathBuf,
+    pub off_branch: OffBranch,
     pub repo_url: String,
     pub release: String,
 }
@@ -53,6 +54,7 @@ impl Env {
         Env {
             checkout: paths.checkout(id),
             worktree: paths.worktree(id),
+            off_branch: id.off_branch(),
             repo_url: format!("https://github.com/{}.git", id.repo()),
             release: release_base(id),
         }
@@ -95,6 +97,7 @@ fn command(step: &Step, env: &Env) -> Command {
     let vars = [
         ("CHECKOUT", env.checkout.to_string_lossy().into_owned()),
         ("WORKTREE", env.worktree.to_string_lossy().into_owned()),
+        ("OFF_BRANCH", env.off_branch.name().into()),
         ("REPO_URL", env.repo_url.clone()),
         ("RELEASE", env.release.clone()),
         ("NO_COLOR", "1".into()),
