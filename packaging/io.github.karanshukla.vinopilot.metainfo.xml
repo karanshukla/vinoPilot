@@ -65,7 +65,7 @@
     <release version="0.5.0" date="2026-11-14">
       <description>
         <ul>
-          <li>Install vinoWhisper and vinoSearch from their Flatpak bundles</li>
+          <li>Install vinoSearch from its Flatpak bundle</li>
           <li>The window draws its own title bar, and touchpad scrolling is faster</li>
         </ul>
       </description>

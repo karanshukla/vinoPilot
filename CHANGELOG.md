@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
-- vinoWhisper and vinoSearch can be installed from their Flatpak bundles. The bundle is checked against the release's `SHA256SUMS` (or its own `.sha256`), installed for the user, and updated from the next release's bundle; uninstalling keeps `~/.var/app/<id>`. A release without a bundle says so
+- vinoSearch can be installed from its Flatpak bundle (`dev.vinosearch.VinoSearch`). The bundle is checked against the release's `.sha256`, installed for the user, and updated from the next release's bundle; uninstalling keeps `~/.var/app/dev.vinosearch.VinoSearch`. A release without a bundle says so
 - The window draws its own title bar, as the other vino apps now do (vino-ui 0.5.0): vinoPilot, the version and the site up in the bar, minimise, maximise and close in the top right corner, and Check for updates and Update all beside them where there's room. The bar drags the window and the edges resize it. A tiling desktop keeps the header as it was, and `VINO_UI_TITLE_BAR=system` brings the desktop's bar back
 - A two-finger touchpad swipe scrolls three times as far as before; a mouse wheel is unchanged
 
