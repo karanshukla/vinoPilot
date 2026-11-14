@@ -68,7 +68,11 @@ fn list_json_names_every_component_and_its_ways_in() {
             assert!(c.get(key).is_some(), "{} has no {key}", c["id"]);
         }
         assert!(c.get("latest").is_none(), "list must not go online");
-        if c["id"] != "vinoauthface" {
+        // vinoAuthFace's files and a system-wide Flatpak or package are
+        // outside the home, so the machine's own installs show up here.
+        let outside =
+            ["flatpak", "deb", "rpm"].contains(&c["installed"]["channel"].as_str().unwrap_or(""));
+        if c["id"] != "vinoauthface" && !outside {
             assert!(
                 c["installed"].is_null(),
                 "{} found in an empty home",
