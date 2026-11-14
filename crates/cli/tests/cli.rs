@@ -82,7 +82,7 @@ fn list_json_names_every_component_and_its_ways_in() {
         .unwrap();
     assert_eq!(
         whisper["channels"],
-        serde_json::json!(["release", "source", "package", "flatpak"])
+        serde_json::json!(["release", "source", "package"])
     );
     let search = components.iter().find(|c| c["id"] == "vinosearch").unwrap();
     assert_eq!(
