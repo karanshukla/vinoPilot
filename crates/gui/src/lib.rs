@@ -30,6 +30,8 @@ const CARD_HEIGHT: f32 = 172.0;
 const GAP: f32 = 12.0;
 /// The grid stops growing here, so cards don't stretch across a 4K screen.
 const PAGE_MAX: f32 = 3.0 * 340.0 + 2.0 * GAP;
+/// Narrower than this, the header's actions go on a line of their own.
+const NARROW: f32 = 620.0;
 
 /// The grid, in vinopilot.ca's order. vinoPilot itself has no card: its
 /// version and update live in the header.
@@ -72,6 +74,9 @@ pub struct Pilot {
     /// This window is the Flatpak's, started from where Flatpak keeps it:
     /// it restarts through `flatpak run`, having no command on `PATH`.
     flatpak: bool,
+    /// The window's buttons and edges are drawn here, not by the desktop
+    /// (vino-ui's `window`).
+    app_title_bar: bool,
 }
 
 impl Pilot {
@@ -102,12 +107,20 @@ impl Pilot {
             focused: false,
             copied: None,
             flatpak: false,
+            app_title_bar: false,
         }
     }
 
     /// The same window, with `parts` as the commands found: for the tests.
     pub fn with_parts(mut self, parts: Vec<Part>) -> Self {
         self.parts = parts;
+        self
+    }
+
+    /// The same window with its own window buttons, for a window opened
+    /// without the desktop's decorations (`vino_ui::window::viewport`).
+    pub fn with_app_title_bar(mut self, on: bool) -> Self {
+        self.app_title_bar = on;
         self
     }
 
@@ -206,27 +219,27 @@ impl Pilot {
         }
     }
 
-    fn header(&mut self, ui: &mut egui::Ui) {
-        let narrow = ui.available_width() < 620.0;
-        ui.horizontal(|ui| {
-            widgets::title(ui, "vinoPilot");
-            self.version_button(ui);
-            self.about_button(ui);
-            if ui
-                .add(Button::ghost(vino_ui::family::SITE_LABEL).small())
-                .on_hover_text(vino_ui::family::SITE)
-                .clicked()
-                && let Err(e) = vino_ui::family::open(vino_ui::family::SITE)
-            {
-                eprintln!("vinopilot: couldn't open {}: {e}", vino_ui::family::SITE);
-            }
-            if !narrow {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    self.actions(ui);
-                });
-            }
-        });
-        if narrow {
+    /// `bar`: the title line is in the window's bar, not here.
+    fn header(&mut self, ui: &mut egui::Ui, bar: bool) {
+        let narrow = ui.available_width() < NARROW;
+        if !bar {
+            ui.horizontal(|ui| {
+                self.title_line(ui, true);
+                if !narrow {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.actions(ui);
+                    });
+                }
+            });
+        }
+        if narrow && bar {
+            // The site, which the bar's title line leaves out to keep clear
+            // of the window buttons.
+            ui.horizontal(|ui| {
+                self.actions(ui);
+                site_link(ui);
+            });
+        } else if narrow {
             ui.horizontal(|ui| self.actions(ui));
         }
         widgets::muted(
@@ -234,6 +247,16 @@ impl Pilot {
             "Each app installs through its own installer, which checks what it downloads.",
         );
         ui.add_space(6.0);
+    }
+
+    /// The title, the version button, ⓘ and, with `site`, the site.
+    fn title_line(&mut self, ui: &mut egui::Ui, site: bool) {
+        widgets::title(ui, "vinoPilot");
+        self.version_button(ui);
+        self.about_button(ui);
+        if site {
+            site_link(ui);
+        }
     }
 
     /// The window's version as a button: it checks for a newer vinoPilot,
@@ -733,21 +756,39 @@ impl Pilot {
                 )
                 .show(ui, |ui| self.log(ui));
         }
+        // With the app's title bar, the header's title line moves up into a
+        // bar of its own, with the window buttons at its end: that bar is
+        // what the window is dragged by. Update all and the rest stay beside
+        // the title where there's room, as they were.
+        let bar = self.app_title_bar;
+        if bar {
+            let narrow = header_width(ui, ui.available_width() - widgets::PAGE_INSET) < NARROW;
+            // Both halves act on the window, one after the other.
+            let pilot = std::cell::RefCell::new(&mut *self);
+            vino_ui::window::bar(
+                ui,
+                widgets::PAGE_INSET,
+                |ui| pilot.borrow_mut().title_line(ui, !narrow),
+                |ui| {
+                    if !narrow {
+                        pilot.borrow_mut().actions(ui);
+                    }
+                },
+            );
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(p.bg).inner_margin(egui::Margin {
                 left: widgets::PAGE_INSET as i8,
                 right: 0,
-                top: 20,
+                top: if bar { 2 } else { 20 },
                 bottom: 0,
             }))
             .show(ui, |ui| {
                 // Above the scroll area, so it stays put; as wide as the
                 // cards, which sit inside the scroll bar and its gap.
                 ui.scope(|ui| {
-                    let bar = ui.spacing().scroll.allocated_width();
-                    let inside = ui.available_width() - bar - widgets::SCROLL_GAP;
-                    ui.set_max_width(inside.min(PAGE_MAX));
-                    self.header(ui);
+                    ui.set_max_width(header_width(ui, ui.available_width()));
+                    self.header(ui, bar);
                 });
                 ui.add_space(6.0);
                 widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
@@ -756,6 +797,24 @@ impl Pilot {
                 });
             });
     }
+}
+
+fn site_link(ui: &mut egui::Ui) {
+    if ui
+        .add(Button::ghost(vino_ui::family::SITE_LABEL).small())
+        .on_hover_text(vino_ui::family::SITE)
+        .clicked()
+        && let Err(e) = vino_ui::family::open(vino_ui::family::SITE)
+    {
+        eprintln!("vinopilot: couldn't open {}: {e}", vino_ui::family::SITE);
+    }
+}
+
+/// The header's width in `available`: the cards', which sit inside the
+/// scroll bar and its gap.
+fn header_width(ui: &egui::Ui, available: f32) -> f32 {
+    let bar = ui.spacing().scroll.allocated_width();
+    (available - bar - widgets::SCROLL_GAP).min(PAGE_MAX)
 }
 
 /// How long a distro tag says "copied".
@@ -881,6 +940,13 @@ impl eframe::App for Pilot {
         }
         self.focused = focused;
         Pilot::ui(self, ui);
+        if self.app_title_bar {
+            vino_ui::window::edges(ui);
+        }
+    }
+
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        vino_ui::input::faster_touchpad(raw);
     }
 }
 
