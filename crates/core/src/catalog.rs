@@ -95,7 +95,6 @@ impl Id {
     pub fn flatpak(self) -> Option<&'static str> {
         match self {
             Id::App(App::Pilot) => Some(PILOT_APP_ID),
-            Id::App(App::Whisper) => Some("io.github.karanshukla.vinowhisper"),
             Id::App(App::Search) => Some("dev.vinosearch.VinoSearch"),
             _ => None,
         }
@@ -978,10 +977,10 @@ mod tests {
     }
 
     #[test]
-    fn vinowhisper_and_vinosearch_also_install_from_their_flatpak() {
+    fn vinosearch_also_installs_from_its_flatpak() {
         for id in Id::ALL {
             let offered = id.channels().contains(&Channel::Flatpak);
-            let has = matches!(id, Id::App(App::Whisper | App::Search));
+            let has = id == Id::App(App::Search);
             assert_eq!(offered, has, "{}", id.name());
             // The default way in stays the first.
             assert_ne!(id.channels()[0], Channel::Flatpak);
@@ -989,7 +988,7 @@ mod tests {
                 continue;
             }
             let app_id = id.flatpak().unwrap();
-            assert_eq!(app_id, format!("io.github.karanshukla.{}", id.slug()));
+            assert_eq!(app_id, "dev.vinosearch.VinoSearch");
             for action in ACTIONS {
                 let steps = steps(id, Channel::Flatpak, action);
                 assert_eq!(steps.len(), 1, "{} {action:?}", id.name());
@@ -1069,19 +1068,15 @@ mod tests {
         if !["bash", "curl", "sha256sum"].into_iter().all(has) {
             return;
         }
-        // vinoWhisper's release has SHA256SUMS, vinoSearch's a .sha256 per file.
-        for (id, sums) in [
-            (Id::App(App::Whisper), "SHA256SUMS".to_string()),
-            (
-                Id::App(App::Search),
-                "vinosearch-x86_64.flatpak.sha256".to_string(),
-            ),
-        ] {
-            let ran = install_flatpak(id, &sums, true).unwrap();
+        // Either checksum file: vinoSearch's release has a .sha256 per file,
+        // the other vino apps' SHA256SUMS.
+        let id = Id::App(App::Search);
+        for sums in ["SHA256SUMS", "vinosearch-x86_64.flatpak.sha256"] {
+            let ran = install_flatpak(id, sums, true).unwrap();
             let asset = format!("{}-x86_64.flatpak", id.slug());
             assert!(ran.starts_with("install --user -y "), "{ran}");
             assert!(ran.trim_end().ends_with(&asset), "{ran}");
-            let why = install_flatpak(id, &sums, false).unwrap_err();
+            let why = install_flatpak(id, sums, false).unwrap_err();
             assert!(why.contains("doesn't match its checksum"), "{why}");
         }
     }
