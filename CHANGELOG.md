@@ -5,6 +5,18 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-14
+
+### Features
+
+- vinoWhisper and vinoSearch can be installed from their Flatpak bundles. The bundle is checked against the release's `SHA256SUMS` (or its own `.sha256`), installed for the user, and updated from the next release's bundle; uninstalling keeps `~/.var/app/<id>`. A release without a bundle says so
+- The window draws its own title bar, as the other vino apps now do (vino-ui 0.5.0): vinoPilot, the version and the site up in the bar, minimise, maximise and close in the top right corner, and Check for updates and Update all beside them where there's room. The bar drags the window and the edges resize it. A tiling desktop keeps the header as it was, and `VINO_UI_TITLE_BAR=system` brings the desktop's bar back
+- A two-finger touchpad swipe scrolls three times as far as before; a mouse wheel is unchanged
+
+### Bug Fixes
+
+- Installing from a source checkout that's on a feature branch no longer fails on `git pull`. The default branch is installed from a worktree, leaving the branch alone. vinoWhisper, vinoPop and vinoUserInterface, which run from the folder they're installed from, have the checkout switched to the default branch instead (local changes are stashed, and the log says how to get back)
+
 ## [0.4.1] - 2026-11-13
 
 ### Bug Fixes

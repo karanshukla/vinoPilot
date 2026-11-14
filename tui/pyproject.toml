@@ -1,6 +1,6 @@
 [project]
 name = "vinopilot"
-version = "0.4.1"
+version = "0.5.0"
 description = "Terminal UI for vinoPilot: install, update and uninstall the vinoPilot apps"
 readme = "README.md"
 license = "MIT"
