@@ -33,12 +33,16 @@ fn main() -> eframe::Result {
         }
         _ => {}
     }
+    let app_title_bar = vino_ui::window::app_title_bar();
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("vinoPilot")
-            .with_app_id("io.github.karanshukla.vinopilot")
-            .with_inner_size([1000.0, 720.0])
-            .with_min_inner_size([360.0, 360.0]),
+        viewport: vino_ui::window::viewport(
+            egui::ViewportBuilder::default()
+                .with_title("vinoPilot")
+                .with_app_id("io.github.karanshukla.vinopilot")
+                .with_inner_size([1000.0, 720.0])
+                .with_min_inner_size([360.0, 360.0]),
+            app_title_bar,
+        ),
         ..Default::default()
     };
     eframe::run_native(
@@ -46,7 +50,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             theme::install(&cc.egui_ctx);
-            Ok(Box::new(Pilot::new(&cc.egui_ctx)))
+            Ok(Box::new(
+                Pilot::new(&cc.egui_ctx).with_app_title_bar(app_title_bar),
+            ))
         }),
     )
 }
