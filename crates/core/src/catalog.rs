@@ -96,7 +96,7 @@ impl Id {
         match self {
             Id::App(App::Pilot) => Some(PILOT_APP_ID),
             Id::App(App::Whisper) => Some("io.github.karanshukla.vinowhisper"),
-            Id::App(App::Search) => Some("io.github.karanshukla.vinosearch"),
+            Id::App(App::Search) => Some("dev.vinosearch.VinoSearch"),
             _ => None,
         }
     }

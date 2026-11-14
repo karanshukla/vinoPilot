@@ -822,7 +822,7 @@ mod tests {
             |paths: &Paths| local(paths, id, &HashMap::new(), &HashMap::new(), None).installed;
         let files = paths
             .system_flatpak
-            .join("app/io.github.karanshukla.vinosearch/current/active/files");
+            .join("app/dev.vinosearch.VinoSearch/current/active/files");
         std::fs::create_dir_all(files.join("share/metainfo")).unwrap();
         // No metainfo: installed, version unknown.
         assert_eq!(
@@ -833,7 +833,7 @@ mod tests {
             })
         );
         std::fs::write(
-            files.join("share/metainfo/io.github.karanshukla.vinosearch.metainfo.xml"),
+            files.join("share/metainfo/dev.vinosearch.VinoSearch.metainfo.xml"),
             "<component>\n<releases>\n<release version=\"9.1.0\" date=\"2026-11-20\"/>\n\
              <release version=\"9.0.0\" date=\"2026-11-01\"/>\n</releases>\n</component>\n",
         )
