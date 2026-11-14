@@ -490,6 +490,10 @@ pub const PILOT_APP_ID: &str = "io.github.karanshukla.vinopilot";
 /// a system package; the download and the check stay the user's.
 /// `flatpak_scope` is where `$APP_ID` is installed, and the user's
 /// installation for a first install: no password, like the other ways in.
+/// `scoped_flatpak` runs flatpak there, through `as_root` system-wide:
+/// flatpak's own polkit check finds no password agent for a process outside
+/// the desktop's session (the window's steps run in systemd's user manager),
+/// so it fails with "not allowed for user", where pkexec asks.
 const PACKAGE: &str = r#"tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 fetch() {
@@ -519,6 +523,12 @@ flatpak_scope() {
     else echo --user
     fi
 }
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
 "#;
 
 const PILOT_DEB: &str = r#"fetch vinopilot-x86_64.deb
@@ -540,14 +550,9 @@ fi"#;
 /// is an error to Flatpak, `--reinstall` or not (1.14, 2026-11-09), and
 /// nothing to do here. A running window keeps its files until it closes:
 /// Flatpak removes a deployment that's in use afterwards.
-///
-/// `-y`, not `--noninteractive`: the latter also stops polkit from asking
-/// for a password, and a system-wide bundle install always needs one
-/// (`install-bundle` is `auth_admin`, and Flatpak's rule for the admin group
-/// doesn't cover it), so it failed with "not allowed for user".
 const FLATPAK_INSTALL: &str = r#"need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
-if out="$(LC_ALL=C flatpak install "$(flatpak_scope)" -y "$tmp/$ASSET" 2>&1)"; then
+if out="$(scoped_flatpak install -y "$tmp/$ASSET" 2>&1)"; then
     echo "$out"
 else
     echo "$out"
@@ -560,7 +565,7 @@ fi"#;
 /// Leaves `~/.var/app/$APP_ID` alone: what the app keeps there is the
 /// user's to delete.
 const FLATPAK_UNINSTALL: &str = r#"need flatpak "it's what this was installed with"
-flatpak uninstall "$(flatpak_scope)" -y "$APP_ID""#;
+scoped_flatpak uninstall -y "$APP_ID""#;
 
 /// A Flatpak step: the package prelude, with `$APP_ID` and `$ASSET` (the
 /// bundle's name in the release) set for `body`.
@@ -1009,11 +1014,16 @@ mod tests {
     /// Runs `id`'s Flatpak install against a `file://` release holding
     /// `sums` as the checksum file `sums_name`, with `flatpak` stubbed to
     /// write its arguments down. What it was run with, or the step's stderr.
-    fn install_flatpak(id: Id, sums_name: &str, good: bool) -> Result<String, String> {
+    fn install_flatpak(
+        id: Id,
+        sums_name: &str,
+        good: bool,
+        system: bool,
+    ) -> Result<String, String> {
         use std::fs;
         let asset = format!("{}-x86_64.flatpak", id.slug());
         let root = std::env::temp_dir().join(format!(
-            "vinopilot-flatpak-step-{}-{sums_name}-{good}-{}",
+            "vinopilot-flatpak-step-{}-{sums_name}-{good}-{system}-{}",
             id.slug(),
             std::process::id()
         ));
@@ -1030,14 +1040,20 @@ mod tests {
         let hash = String::from_utf8_lossy(&sum.stdout)[..64].to_string();
         let hash = if good { hash } else { "0".repeat(64) };
         fs::write(release.join(sums_name), format!("{hash}  {asset}\n")).unwrap();
-        // `info` fails: installed nowhere yet.
-        let stub = stubs.join("flatpak");
-        fs::write(
-            &stub,
-            "#!/bin/sh\n[ \"$1\" != info ] || exit 1\necho \"$@\" >> \"$HOME/ran\"\n",
-        )
-        .unwrap();
-        make_executable(&stub);
+        // `info` fails, installed nowhere yet, unless it's `system`-wide.
+        let info = if system {
+            "[ \"$2\" = --system ]; exit"
+        } else {
+            "exit 1"
+        };
+        let flatpak = format!(
+            "#!/bin/sh\n[ \"$1\" != info ] || {{ {info}; }}\necho \"$@\" >> \"$HOME/ran\"\n"
+        );
+        let pkexec = "#!/bin/sh\nprintf 'pkexec ' >> \"$HOME/ran\"\nexec \"$@\"\n";
+        for (name, script) in [("flatpak", flatpak.as_str()), ("pkexec", pkexec)] {
+            fs::write(stubs.join(name), script).unwrap();
+            make_executable(&stubs.join(name));
+        }
         let step = &steps(id, Channel::Flatpak, Action::Install)[0];
         let out = std::process::Command::new("bash")
             .args(["-c", &step.script])
@@ -1072,13 +1088,33 @@ mod tests {
         // the other vino apps' SHA256SUMS.
         let id = Id::App(App::Search);
         for sums in ["SHA256SUMS", "vinosearch-x86_64.flatpak.sha256"] {
-            let ran = install_flatpak(id, sums, true).unwrap();
+            let ran = install_flatpak(id, sums, true, false).unwrap();
             let asset = format!("{}-x86_64.flatpak", id.slug());
             assert!(ran.starts_with("install --user -y "), "{ran}");
             assert!(ran.trim_end().ends_with(&asset), "{ran}");
-            let why = install_flatpak(id, sums, false).unwrap_err();
+            let why = install_flatpak(id, sums, false, false).unwrap_err();
             assert!(why.contains("doesn't match its checksum"), "{why}");
         }
+    }
+
+    #[test]
+    fn a_system_wide_flatpak_updates_through_pkexec() {
+        let has = |tool: &str| {
+            std::process::Command::new(tool)
+                .arg("--version")
+                .output()
+                .is_ok()
+        };
+        if !["bash", "curl", "sha256sum"].into_iter().all(has) {
+            return;
+        }
+        // As root, as_root runs it as it is: nothing to check.
+        let root = std::process::Command::new("id").arg("-u").output().unwrap();
+        if String::from_utf8_lossy(&root.stdout).trim() == "0" {
+            return;
+        }
+        let ran = install_flatpak(Id::App(App::Pilot), "SHA256SUMS", true, true).unwrap();
+        assert!(ran.starts_with("pkexec install --system -y "), "{ran}");
     }
 
     #[test]
