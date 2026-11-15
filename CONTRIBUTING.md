@@ -28,7 +28,7 @@ CI also builds the release tarball, the .deb, the .rpm and the Flatpak the way `
 - The terminal UI in `tui/` needs [uv](https://docs.astral.sh/uv/); `cd tui && uv sync` makes its venv, `VINOPILOT_BIN=../target/debug/vinopilot uv run vinopilot-tui` runs it on this checkout's command. Its tests drive a fake `vinopilot`, so a JSON change needs `tests/fake_vinopilot.py` updated too.
 - `crates/cli/tests/cli.rs` is the `--json` contract. Change it when you change the shape, and say so in the changelog and `docs/json-api.md`.
 - Changed the window: regenerate the pictures with `cargo test -p vinopilot-gui --test screenshots -- --ignored` (needs a GPU or lavapipe) and commit `docs/images`.
-- Changed an app's steps in `crates/core/src/catalog.rs`: run that install, update and uninstall for real and say so in the PR. The tests only check the scripts parse.
+- Changed an app's steps in `crates/core/src/catalog/`: bless the snapshot (`VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core`), run that install, update and uninstall for real, and say so in the PR. The tests only check the scripts parse and that none changed by accident. [docs/how-it-works.md](docs/how-it-works.md#the-steps) has the layout.
 - Keep code comments to the *why*, one or two lines.
 - Commits are conventional (`feat:`, `fix:`, `docs:`, ...); the changelog is generated from them with `git cliff`.
 - Every Actions `uses:` is pinned to a commit SHA with a version comment.

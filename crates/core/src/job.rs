@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::catalog::{Action, Channel, Id, OffBranch, Step};
 use crate::detect::Paths;
@@ -15,6 +16,17 @@ pub type Notify = Arc<dyn Fn(Option<&str>) + Send + Sync>;
 
 /// Lines kept; an installer that compiles prints thousands.
 const KEEP: usize = 4000;
+
+/// How often a running step, or a waiting caller, looks again.
+const POLL: Duration = Duration::from_millis(50);
+
+/// What the output threads get to empty the pipes after a step exits, before
+/// its last line is read.
+const PUMP_DRAIN: Duration = Duration::from_millis(100);
+
+/// pkexec's exit codes for a dismissed password dialog (126) and for not
+/// being authorised (127).
+const PKEXEC_REFUSED: [i32; 2] = [126, 127];
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "outcome", content = "reason", rename_all = "lowercase")]
@@ -91,6 +103,17 @@ pub fn clean(line: &str) -> String {
         }
     }
     out
+}
+
+/// Why a step failed, from its output: the installer's last `✗` line, else
+/// its last line that says anything.
+fn failure_reason(lines: &[String]) -> Option<String> {
+    lines
+        .iter()
+        .rev()
+        .find(|l| l.trim_start().starts_with('✗'))
+        .or_else(|| lines.iter().rev().find(|l| !l.trim().is_empty()))
+        .map(|l| l.trim_start_matches(['✗', ' ']).to_string())
 }
 
 fn command(step: &Step, env: &Env) -> Command {
@@ -188,7 +211,7 @@ impl Job {
     pub fn wait(&self) -> Outcome {
         loop {
             match self.outcome() {
-                Outcome::Running => std::thread::sleep(std::time::Duration::from_millis(50)),
+                Outcome::Running => std::thread::sleep(POLL),
                 done => return done,
             }
         }
@@ -242,29 +265,26 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
                 Err(e) => return Outcome::Failed(e.to_string()),
             }
             drop(s);
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(POLL);
         };
-        // Let the pumps drain the pipes before reading the last line.
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(PUMP_DRAIN);
         if shared.lock().unwrap().stop {
             return Outcome::Stopped;
         }
         if !status.success() {
-            // pkexec exits 126 when the password dialog is dismissed.
-            if step.root && matches!(status.code(), Some(126 | 127)) {
+            if step.root
+                && status
+                    .code()
+                    .is_some_and(|code| PKEXEC_REFUSED.contains(&code))
+            {
                 return Outcome::Failed(
                     "Not authorised: the password prompt was cancelled.".into(),
                 );
             }
             let lines = shared.lock().unwrap().lines.clone();
-            let why = lines
-                .iter()
-                .rev()
-                .find(|l| l.trim_start().starts_with('✗'))
-                .or_else(|| lines.iter().rev().find(|l| !l.trim().is_empty()))
-                .map(|l| l.trim_start_matches(['✗', ' ']).to_string())
-                .unwrap_or_else(|| format!("exited with {status}"));
-            return Outcome::Failed(why);
+            return Outcome::Failed(
+                failure_reason(&lines).unwrap_or_else(|| format!("exited with {status}")),
+            );
         }
     }
     Outcome::Done
@@ -279,5 +299,79 @@ mod tests {
         assert_eq!(clean("\x1b[1;32m✓\x1b[0m done"), "✓ done");
         assert_eq!(clean("10%\r50%\r100%"), "100%");
         assert_eq!(clean("plain"), "plain");
+    }
+
+    fn env() -> Env {
+        Env {
+            checkout: "/src/app".into(),
+            worktree: "/share/worktrees/app".into(),
+            off_branch: OffBranch::Worktree,
+            repo_url: "https://example.invalid/app.git".into(),
+            release: "https://example.invalid/release".into(),
+        }
+    }
+
+    fn step(root: bool) -> Step {
+        Step {
+            script: "true".into(),
+            root,
+        }
+    }
+
+    /// pkexec clears the environment, so a root step's variables can only
+    /// arrive as `env` arguments.
+    #[test]
+    fn a_root_step_gets_its_variables_as_pkexec_env_arguments() {
+        let cmd = command(&step(true), &env());
+        assert_eq!(cmd.get_program(), "pkexec");
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args[0], "env");
+        for var in [
+            "CHECKOUT=/src/app",
+            "WORKTREE=/share/worktrees/app",
+            "OFF_BRANCH=worktree",
+            "REPO_URL=https://example.invalid/app.git",
+            "RELEASE=https://example.invalid/release",
+            "NO_COLOR=1",
+        ] {
+            assert!(args.iter().any(|a| a == var), "{var} missing from {args:?}");
+        }
+        assert_eq!(args[args.len() - 3..], ["bash", "-c", "true"]);
+    }
+
+    #[test]
+    fn a_user_step_gets_its_variables_from_the_environment() {
+        let cmd = command(&step(false), &env());
+        assert_eq!(cmd.get_program(), "bash");
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args, ["-c", "true"]);
+        let checkout = cmd
+            .get_envs()
+            .find(|(name, _)| *name == "CHECKOUT")
+            .and_then(|(_, value)| value);
+        assert_eq!(checkout, Some("/src/app".as_ref()));
+    }
+
+    fn lines(text: &[&str]) -> Vec<String> {
+        text.iter().map(|l| l.to_string()).collect()
+    }
+
+    #[test]
+    fn a_failure_is_explained_by_the_installers_last_cross_line() {
+        let output = lines(&["building", "  ✗ no cargo", "✗ gave up", "cleaning up", ""]);
+        assert_eq!(failure_reason(&output).as_deref(), Some("gave up"));
+    }
+
+    #[test]
+    fn a_failure_without_a_cross_line_is_explained_by_the_last_line_that_says_something() {
+        let output = lines(&["building", "error: linker not found", "  ", ""]);
+        assert_eq!(
+            failure_reason(&output).as_deref(),
+            Some("error: linker not found")
+        );
+        assert_eq!(failure_reason(&lines(&["", " "])), None);
     }
 }

@@ -150,10 +150,8 @@ pub fn version_in(text: &str) -> Option<String> {
     let line = text.lines().next()?;
     line.split_whitespace().skip(1).find_map(|word| {
         let word = word.strip_prefix('v').unwrap_or(word);
-        let numeric = word.starts_with(|c: char| c.is_ascii_digit())
-            && word
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+');
+        let numeric =
+            word.starts_with(|c: char| c.is_ascii_digit()) && crate::version::is_plain(word);
         (numeric || word == "dev").then(|| word.to_string())
     })
 }
@@ -378,11 +376,7 @@ pub fn metainfo_version(text: &str) -> Option<String> {
     let value = tag.split("version=").nth(1)?;
     let quote = value.chars().next().filter(|c| *c == '"' || *c == '\'')?;
     let version = value[1..].split(quote).next()?;
-    let plain = !version.is_empty()
-        && version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+');
-    plain.then(|| version.to_string())
+    crate::version::is_plain(version).then(|| version.to_string())
 }
 
 /// `id` installed as its release's Flatpak. vinoPilot's holds the real
@@ -500,13 +494,25 @@ pub fn scan(paths: &Paths) -> HashMap<Id, Local> {
     handles.into_iter().filter_map(|h| h.join().ok()).collect()
 }
 
-fn local(
+/// vinoAuthFace leaves no marker: its release builds are stamped with their
+/// tag, and a checkout's build says `dev`.
+fn authface_channel(version: Option<&str>) -> Channel {
+    if version == Some("dev") {
+        Channel::Source
+    } else {
+        Channel::Release
+    }
+}
+
+/// `id` as installed in the home (or, for vinoAuthFace, under /usr/local),
+/// from what its installer leaves behind.
+fn home_install(
     paths: &Paths,
     id: Id,
     crates: &HashMap<String, (String, Channel)>,
     uv_list: &HashMap<String, String>,
-    uv_receipt: Option<String>,
-) -> Local {
+    uv_receipt: Option<&str>,
+) -> Option<Installed> {
     let installed = |channel, version| Some(Installed { channel, version });
     let by_marker = |marker: &str, bin: &str| -> Option<Installed> {
         let bin = first(&[paths.local_bin(bin), paths.cargo_bin(bin)])?;
@@ -519,18 +525,19 @@ fn local(
     };
     let from_crates = |name: &str| -> Option<Installed> {
         let (version, channel) = crates.get(name)?;
-        // The record outlives a binary deleted by hand.
+        // cargo's record outlives a binary deleted by hand:
+        // `a_release_ovfetch_wins_over_a_cargo_install`.
         paths.cargo_bin(name).exists().then_some(())?;
         installed(*channel, Some(version.clone()))
     };
     let from_uv = |tool: &str, bin: &str| -> Option<Installed> {
-        match (uv_receipt.as_deref(), uv_list.get(tool)) {
+        match (uv_receipt, uv_list.get(tool)) {
             (Some(receipt), version) => installed(parse_uv_receipt(receipt), version.cloned()),
             (None, _) => by_marker(&format!("{tool}-upgrade"), bin),
         }
     };
 
-    let installed = match id {
+    match id {
         Id::App(App::Whisper) => from_uv("vinowhisper", "vinowhisper-setup"),
         Id::App(App::Speak) => from_uv("vinospeak", "vinospeak"),
         Id::App(App::Pop) => {
@@ -551,12 +558,7 @@ fn local(
             let bin = Path::new("/usr/local/bin/vinoauthface");
             bin.exists().then(|| {
                 let version = ask_version(bin);
-                // Release builds are stamped with their tag; a checkout's is `dev`.
-                let channel = if version.as_deref() == Some("dev") {
-                    Channel::Source
-                } else {
-                    Channel::Release
-                };
+                let channel = authface_channel(version.as_deref());
                 Installed { channel, version }
             })
         }
@@ -576,26 +578,40 @@ fn local(
             }
         }
         Id::Ui => None,
-    };
+    }
+}
 
+/// A library is "installed" when its checkout is there, at its Cargo.toml's
+/// version.
+fn library_checkout(checkout: &Checkout) -> Installed {
+    Installed {
+        channel: Channel::Source,
+        version: std::fs::read_to_string(checkout.path.join("Cargo.toml"))
+            .ok()
+            .and_then(|text| cargo_toml_version(&text)),
+    }
+}
+
+fn local(
+    paths: &Paths,
+    id: Id,
+    crates: &HashMap<String, (String, Channel)>,
+    uv_list: &HashMap<String, String>,
+    uv_receipt: Option<String>,
+) -> Local {
     let checkout = checkout(paths, id);
-    let installed = if id == Id::Ui {
-        checkout.as_ref().map(|c| Installed {
-            channel: Channel::Source,
-            version: std::fs::read_to_string(c.path.join("Cargo.toml"))
-                .ok()
-                .and_then(|t| cargo_toml_version(&t)),
-        })
-    } else {
-        installed
-    };
     let system_package = system_package(paths, id);
+    let in_home = if id == Id::Ui {
+        checkout.as_ref().map(library_checkout)
+    } else {
+        home_install(paths, id, crates, uv_list, uv_receipt.as_deref())
+    };
     // A copy in the home runs first; without one, vinoPilot is its package,
     // and an app its Flatpak.
-    let installed = match installed {
+    let installed = match in_home {
         None if id == Id::App(App::Pilot) => packaged(paths, system_package.as_ref()),
         None => flatpak(paths, id),
-        installed => installed,
+        in_home => in_home,
     };
     Local {
         installed,
@@ -608,6 +624,27 @@ fn local(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Everything, the system's directories included, inside `home`.
+    fn paths_under(home: &Path) -> Paths {
+        Paths {
+            home: home.to_path_buf(),
+            source_root: home.join("src"),
+            system_bin: home.join("usr/bin"),
+            system_flatpak: home.join("var/lib/flatpak"),
+        }
+    }
+
+    #[test]
+    fn a_vinoauthface_that_says_dev_is_a_source_build() {
+        assert_eq!(authface_channel(Some("dev")), Channel::Source);
+    }
+
+    #[test]
+    fn a_vinoauthface_with_a_version_or_none_is_a_release() {
+        assert_eq!(authface_channel(Some("12")), Channel::Release);
+        assert_eq!(authface_channel(None), Channel::Release);
+    }
 
     #[test]
     fn crates_toml_tells_crates_io_from_a_path() {
@@ -678,12 +715,7 @@ mod tests {
     fn a_release_ovfetch_wins_over_a_cargo_install() {
         let home = std::env::temp_dir().join(format!("vinopilot-ovfetch-{}", std::process::id()));
         std::fs::create_dir_all(home.join(".local/bin")).unwrap();
-        let paths = Paths {
-            home: home.clone(),
-            source_root: home.join("src"),
-            system_bin: home.join("usr/bin"),
-            system_flatpak: home.join("var/lib/flatpak"),
-        };
+        let paths = paths_under(&home);
         let crates = HashMap::from([(
             "ovfetch".to_string(),
             ("0.6.0".to_string(), Channel::Source),
@@ -710,12 +742,7 @@ mod tests {
         let (local, cargo) = (home.join(".local/bin"), home.join(".cargo/bin"));
         std::fs::create_dir_all(&local).unwrap();
         std::fs::create_dir_all(&cargo).unwrap();
-        let paths = Paths {
-            home: home.clone(),
-            source_root: home.join("src"),
-            system_bin: home.join("usr/bin"),
-            system_flatpak: home.join("var/lib/flatpak"),
-        };
+        let paths = paths_under(&home);
         let search = App::Search;
         std::fs::write(local.join("vinosearch"), "release").unwrap();
         assert_eq!(shadowed(&paths, Id::App(search), "".as_ref()), vec![]);
@@ -747,12 +774,7 @@ mod tests {
         let tui = bin.join("vinopilot-tui");
         std::fs::write(&tui, "#!/bin/sh\necho 'vinopilot-tui 0.2.0'\n").unwrap();
         std::fs::set_permissions(&tui, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let paths = Paths {
-            home: home.clone(),
-            source_root: home.join("src"),
-            system_bin: home.join("usr/bin"),
-            system_flatpak: home.join("var/lib/flatpak"),
-        };
+        let paths = paths_under(&home);
         let found = parts(&paths);
         assert_eq!(found.iter().map(|p| p.command).collect::<Vec<_>>(), PARTS);
         assert_eq!(found[0].path, None);
@@ -765,12 +787,7 @@ mod tests {
     fn vinopilot_is_found_in_its_flatpak_user_before_system() {
         use std::os::unix::fs::PermissionsExt;
         let home = std::env::temp_dir().join(format!("vinopilot-flatpak-{}", std::process::id()));
-        let paths = Paths {
-            home: home.clone(),
-            source_root: home.join("src"),
-            system_bin: home.join("usr/bin"),
-            system_flatpak: home.join("var/lib/flatpak"),
-        };
+        let paths = paths_under(&home);
         let put = |installation: PathBuf, version: &str| {
             let dir = installation
                 .join("app/io.github.karanshukla.vinopilot/current/active/files/libexec/vinopilot");
@@ -811,12 +828,7 @@ mod tests {
         let home =
             std::env::temp_dir().join(format!("vinopilot-appflatpak-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
-        let paths = Paths {
-            home: home.clone(),
-            source_root: home.join("src"),
-            system_bin: home.join("usr/bin"),
-            system_flatpak: home.join("var/lib/flatpak"),
-        };
+        let paths = paths_under(&home);
         let id = Id::App(App::Search);
         let found =
             |paths: &Paths| local(paths, id, &HashMap::new(), &HashMap::new(), None).installed;
@@ -866,12 +878,7 @@ mod tests {
     fn an_empty_home_has_nothing_installed() {
         let home = std::env::temp_dir().join(format!("vinopilot-test-{}", std::process::id()));
         std::fs::create_dir_all(&home).unwrap();
-        let paths = Paths {
-            home: home.clone(),
-            source_root: home.join("src"),
-            system_bin: home.join("usr/bin"),
-            system_flatpak: home.join("var/lib/flatpak"),
-        };
+        let paths = paths_under(&home);
         let crates = HashMap::new();
         let uv = HashMap::new();
         for id in Id::ALL {

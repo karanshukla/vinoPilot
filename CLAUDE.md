@@ -4,14 +4,14 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-vinoPilot: installs, updates and uninstalls the vinoPilot apps (vinoWhisper, vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch), ovfetch, the vinoUserInterface library and itself, from their releases, a source checkout, PyPI or crates.io. User docs are the README; don't duplicate them here.
+vinoPilot: installs, updates and uninstalls the vinoPilot apps (vinoWhisper, vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch), ovfetch, the vinoUserInterface library and itself, from their releases, a source checkout, PyPI or crates.io. User docs are the README and the pages it links in `docs/` (`install.md`, `how-it-works.md`, `json-api.md`); don't duplicate them here.
 
 ## Layout
 
 A cargo workspace plus a Python package beside it. Keep repo-level tooling language-neutral.
 
 - `crates/core` (`vinopilot-core`): no UI, no egui.
-  - `catalog.rs`: the components and, per (component, channel, action), the shell steps. Each step is a script run with `bash -c` (or `pkexec env ... bash -c` when `root`), with a shared prelude (`release_run`, `checkout`, `need_*`). Paths and settings reach scripts as `$CHECKOUT`, `$WORKTREE`, `$OFF_BRANCH`, `$REPO_URL`, `$RELEASE` env vars, never formatted in.
+  - `catalog.rs`: the components and their ways in. `catalog/steps.rs`: per (component, channel, action), the shell steps, one table per component. `catalog/scripts.rs`: the shell. Each step is a script run with `bash -c` (or `pkexec env ... bash -c` when `root`), with a shared prelude (`release_run`, `checkout`, `need_*`). Paths and settings reach scripts as `$CHECKOUT`, `$WORKTREE`, `$OFF_BRANCH`, `$REPO_URL`, `$RELEASE` env vars, never formatted in. `catalog/steps.snapshot` pins every script; bless a deliberate change with `VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core` and read the diff.
   - `detect.rs`: how each is installed, by looking: `<app>-upgrade` markers in `~/.local/bin`, uv receipts, `~/.cargo/.crates.toml`, `--version` (2 s timeout).
   - `remote.rs`: GitHub latest release, PyPI, crates.io, `git fetch` + behind count. The only module that goes online.
   - `status.rs`: installed + latest into "update available", and the `--json` component shape.
@@ -37,7 +37,7 @@ cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --
 
 ## Gotchas
 
-- **Each app's installer is the source of truth.** Read the app's `install.sh` (and `scripts/install.sh`, `uninstall.sh`) before changing its steps; flags differ per app (vinoWatch's is POSIX `sh`, vinoAuthFace's needs root, vinoOpenEffects' uninstaller shipped only in the repo before `vinoopeneffects-upgrade --uninstall`, vinoWhisper's is `vinowhisper-upgrade --uninstall` in newer releases and the catalog's own `WHISPER_UNINSTALL` otherwise). Uninstall removes an app's models and keeps the user's data; that's each app's uninstaller's call, so don't add per-app purges here (vinoWhisper's fallback is the exception). `every_script_parses` only checks syntax.
+- **Each app's installer is the source of truth.** Read the app's `install.sh` (and `scripts/install.sh`, `uninstall.sh`) before changing its steps; flags differ per app (vinoWatch's is POSIX `sh`, vinoAuthFace's needs root, vinoOpenEffects' uninstaller shipped only in the repo before `vinoopeneffects-upgrade --uninstall`, vinoWhisper's is `vinowhisper-upgrade --uninstall` in newer releases and the catalog's own `WHISPER_UNINSTALL` otherwise). Uninstall removes an app's models and keeps the user's data; that's each app's uninstaller's call, so don't add per-app purges here (vinoWhisper's fallback is the exception). `every_script_parses` only checks syntax, and the snapshot only that the bytes didn't move.
 - **pkexec clears the environment.** Root steps get their vars through `pkexec env`, plus `SUDO_USER` so vinoAuthFace's `deploy.sh` builds and finds the desktop user as itself. A pkexec child is root's: `Job::stop` can't kill it.
 - **`core` forbids unsafe**, so no `env::set_var`; that's why `command()` sets `PATH` per child.
 - **The release CLI is static musl, the window is glibc.** eframe dlopens libEGL/wayland/X11, which static musl can't. The window is built on ubuntu-22.04 for an old glibc floor.

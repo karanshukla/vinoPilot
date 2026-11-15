@@ -13,6 +13,7 @@ pub mod detect;
 pub mod job;
 pub mod remote;
 pub mod status;
+mod version;
 
 pub use catalog::{Action, Channel, Id};
 pub use config::Config;

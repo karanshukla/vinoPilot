@@ -113,9 +113,9 @@ fn main() -> ExitCode {
         }
         "list" => list(&config, &args, false),
         "check" => list(&config, &args, true),
-        "install" => one(operands).and_then(|id| install(&config, &args, id)),
+        "install" => single_app(operands).and_then(|id| install(&config, &args, id)),
         "update" => update(&config, &args, operands),
-        "uninstall" => one(operands).and_then(|id| uninstall(&config, &args, id)),
+        "uninstall" => single_app(operands).and_then(|id| uninstall(&config, &args, id)),
         "steps" => steps(&config, &args, operands),
         "config" => config_cmd(&mut config, &args, operands),
         other => Err(Failure::Usage(format!(
@@ -142,13 +142,13 @@ enum Failure {
     Failed(String),
 }
 
-fn app(name: &str) -> Result<Id, Failure> {
+fn parse_app(name: &str) -> Result<Id, Failure> {
     Id::parse(name).ok_or_else(|| Failure::Usage(format!("no app called {name} (see --help)")))
 }
 
-fn one(operands: &[String]) -> Result<Id, Failure> {
+fn single_app(operands: &[String]) -> Result<Id, Failure> {
     match operands {
-        [name] => app(name),
+        [name] => parse_app(name),
         [] => Err(Failure::Usage("name an app (see --help)".into())),
         _ => Err(Failure::Usage("one app at a time".into())),
     }
@@ -177,14 +177,25 @@ fn components(config: &Config, online: bool) -> Vec<status::Component> {
 fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
     let all = components(config, online);
     if args.json {
-        let doc = serde_json::json!({
-            "vinopilot": VERSION,
-            "source_root": config.source_root,
-            "components": all,
-        });
-        println!("{}", serde_json::to_string_pretty(&doc).unwrap());
-        return Ok(());
+        print_document(config, &all);
+    } else {
+        print_table(&all, online);
+        print_duplicate_installs(&all);
     }
+    Ok(())
+}
+
+/// `list --json` and `check --json`: docs/json-api.md.
+fn print_document(config: &Config, components: &[status::Component]) {
+    let doc = serde_json::json!({
+        "vinopilot": VERSION,
+        "source_root": config.source_root,
+        "components": components,
+    });
+    println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+}
+
+fn print_table(components: &[status::Component], online: bool) {
     println!(
         "{:<18} {:<12} {:<10} {}",
         "APP",
@@ -192,46 +203,68 @@ fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
         "VIA",
         if online { "UPDATE" } else { "" }
     );
-    for c in &all {
-        let (version, via) = match &c.local.installed {
-            Some(i) => (
-                i.version.clone().unwrap_or_else(|| "?".into()),
-                i.channel.label(Id::parse(&c.id).unwrap()).to_string(),
+    for component in components {
+        let (version, via) = match &component.local.installed {
+            Some(installed) => (
+                installed.version.clone().unwrap_or_else(|| "?".into()),
+                installed
+                    .channel
+                    .label(Id::parse(&component.id).unwrap())
+                    .to_string(),
             ),
             None => ("-".into(), "-".into()),
         };
-        let update = match (&c.update, online, c.local.installed.is_some()) {
-            (_, false, _) | (_, true, false) => String::new(),
-            (Update::Available { to }, ..) => format!("{to} available"),
-            (Update::UpToDate, ..) => "up to date".into(),
-            (Update::Unknown { reason }, ..) => reason.clone().unwrap_or_else(|| "?".into()),
-        };
-        println!("{:<18} {:<12} {:<10} {}", c.name, version, via, update);
-    }
-    for c in &all {
-        // vinoPilot's own package is how it's installed, in the row above.
-        let packaged = matches!(
-            c.local.installed.as_ref().map(|i| i.channel),
-            Some(Channel::Deb | Channel::Rpm)
+        let update = update_column(
+            &component.update,
+            online,
+            component.local.installed.is_some(),
         );
-        if let Some(system) = &c.local.system_package
-            && !packaged
+        println!(
+            "{:<18} {:<12} {:<10} {}",
+            component.name, version, via, update
+        );
+    }
+}
+
+/// The UPDATE column: empty offline, and for what isn't installed.
+fn update_column(update: &Update, online: bool, installed: bool) -> String {
+    if !online || !installed {
+        return String::new();
+    }
+    match update {
+        Update::Available { to } => format!("{to} available"),
+        Update::UpToDate => "up to date".into(),
+        Update::Unknown { reason } => reason.clone().unwrap_or_else(|| "?".into()),
+    }
+}
+
+/// vinoPilot's own `.deb` or `.rpm` is how it's installed, not a second copy.
+fn is_own_package(channel: Option<Channel>) -> bool {
+    matches!(channel, Some(Channel::Deb | Channel::Rpm))
+}
+
+/// Under the table: distro packages vinopilot doesn't remove, and commands
+/// installed twice.
+fn print_duplicate_installs(components: &[status::Component]) {
+    for component in components {
+        let channel = component.local.installed.as_ref().map(|i| i.channel);
+        if let Some(system) = &component.local.system_package
+            && !is_own_package(channel)
         {
             println!(
                 "\n{} is also a distro package, which vinopilot doesn't remove: {}",
-                c.name, system.remove
+                component.name, system.remove
             );
         }
-        for s in &c.local.shadowed {
+        for shadowed in &component.local.shadowed {
             println!(
                 "\n{} is installed twice: {} runs, {} doesn't; uninstall and reinstall it to keep one",
-                c.name,
-                s.runs.display(),
-                s.hidden.display()
+                component.name,
+                shadowed.runs.display(),
+                shadowed.hidden.display()
             );
         }
     }
-    Ok(())
 }
 
 /// Runs an action, printing its output as it comes.
@@ -247,11 +280,7 @@ fn run(
         return Err(Failure::Usage(format!(
             "{} can't be {} from {}",
             id.name(),
-            match action {
-                Action::Install => "installed",
-                Action::Update => "updated",
-                Action::Uninstall => "uninstalled",
-            },
+            past_tense(action),
             channel.label(id)
         )));
     }
@@ -287,11 +316,28 @@ fn run(
     }
 }
 
+fn past_tense(action: Action) -> &'static str {
+    match action {
+        Action::Install => "installed",
+        Action::Update => "updated",
+        Action::Uninstall => "uninstalled",
+    }
+}
+
+fn parse_action(name: &str) -> Result<Action, Failure> {
+    match name {
+        "install" => Ok(Action::Install),
+        "update" => Ok(Action::Update),
+        "uninstall" => Ok(Action::Uninstall),
+        other => Err(Failure::Usage(format!("no action called {other}"))),
+    }
+}
+
 fn installed_channel(config: &Config, id: Id) -> Option<Channel> {
     detect::scan(&config.paths())
         .remove(&id)
-        .and_then(|l| l.installed)
-        .map(|i| i.channel)
+        .and_then(|local| local.installed)
+        .map(|installed| installed.channel)
 }
 
 fn install(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
@@ -315,8 +361,8 @@ fn update(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failu
         }
         let todo: Vec<Id> = components(config, true)
             .into_iter()
-            .filter(|c| matches!(c.update, Update::Available { .. }))
-            .filter_map(|c| Id::parse(&c.id))
+            .filter(|component| matches!(component.update, Update::Available { .. }))
+            .filter_map(|component| Id::parse(&component.id))
             .collect();
         if todo.is_empty() && !args.json {
             println!("Everything installed is up to date.");
@@ -325,7 +371,10 @@ fn update(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failu
     } else if operands.is_empty() {
         return Err(Failure::Usage("name an app, or --all (see --help)".into()));
     } else {
-        operands.iter().map(|n| app(n)).collect::<Result<_, _>>()?
+        operands
+            .iter()
+            .map(|name| parse_app(name))
+            .collect::<Result<_, _>>()?
     };
     let mut failed = Vec::new();
     for id in ids {
@@ -348,6 +397,24 @@ fn update(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failu
     }
 }
 
+/// Asks on the terminal, after saying what goes and what stays.
+fn confirm_uninstall(id: Id, channel: Channel) -> Result<(), Failure> {
+    if !std::io::stdin().is_terminal() {
+        return Err(Failure::Usage(
+            "pass --yes to uninstall without a terminal".into(),
+        ));
+    }
+    eprintln!("{}", catalog::uninstall_note(id, channel));
+    eprint!("Uninstall {} ({})? [y/N] ", id.name(), channel.label(id));
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    if matches!(answer.trim(), "y" | "Y" | "yes") {
+        Ok(())
+    } else {
+        Err(Failure::Failed("left it installed".into()))
+    }
+}
+
 fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
     let local = detect::scan(&config.paths())
         .remove(&id)
@@ -367,25 +434,12 @@ fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
         }
     };
     if !args.yes {
-        if !std::io::stdin().is_terminal() {
-            return Err(Failure::Usage(
-                "pass --yes to uninstall without a terminal".into(),
-            ));
-        }
-        eprintln!("{}", catalog::uninstall_note(id, channel));
-        eprint!("Uninstall {} ({})? [y/N] ", id.name(), channel.label(id));
-        let mut answer = String::new();
-        let _ = std::io::stdin().read_line(&mut answer);
-        if !matches!(answer.trim(), "y" | "Y" | "yes") {
-            return Err(Failure::Failed("left it installed".into()));
-        }
+        confirm_uninstall(id, channel)?;
     }
     run(config, args, id, channel, Action::Uninstall)?;
-    // Uninstalling vinoPilot's own package just removed it.
-    let packaged = matches!(channel, Channel::Deb | Channel::Rpm);
     if let Some(remove) = system
         && !args.json
-        && !packaged
+        && !is_own_package(Some(channel))
     {
         println!(
             "{} is still a distro package. Remove it with: {remove}",
@@ -401,13 +455,8 @@ fn steps(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failur
             "steps <app> <install|update|uninstall>".into(),
         ));
     };
-    let id = app(name)?;
-    let action = match action.as_str() {
-        "install" => Action::Install,
-        "update" => Action::Update,
-        "uninstall" => Action::Uninstall,
-        other => return Err(Failure::Usage(format!("no action called {other}"))),
-    };
+    let id = parse_app(name)?;
+    let action = parse_action(action)?;
     let channel = args
         .via
         .or_else(|| installed_channel(config, id))
@@ -459,5 +508,63 @@ fn config_cmd(config: &mut Config, args: &Args, operands: &[String]) -> Result<(
             Ok(())
         }
         _ => Err(Failure::Usage("config [source_root [DIR]]".into())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(words: &[&str]) -> Result<Args, String> {
+        parse_args(words.iter().map(|word| word.to_string()))
+    }
+
+    #[test]
+    fn options_are_read_wherever_they_are_and_the_rest_keeps_its_order() {
+        let args = parse(&["--json", "update", "-y", "whisper", "--all", "pop"]).unwrap();
+        assert!(args.json && args.yes && args.all);
+        assert_eq!(args.rest, ["update", "whisper", "pop"]);
+    }
+
+    #[test]
+    fn an_option_takes_its_value_after_a_space_or_an_equals_sign() {
+        for words in [
+            ["install", "whisper", "--via", "pypi"].as_slice(),
+            ["install", "whisper", "--via=pypi"].as_slice(),
+        ] {
+            assert_eq!(parse(words).unwrap().via, Some(Channel::Package));
+        }
+        let args = parse(&["--source-root=/src", "list"]).unwrap();
+        assert_eq!(args.source_root, Some(PathBuf::from("/src")));
+    }
+
+    #[test]
+    fn a_missing_or_unknown_value_is_refused() {
+        assert_eq!(parse(&["--via"]).err().unwrap(), "--via needs a value");
+        assert_eq!(
+            parse(&["--via", "snap"]).err().unwrap(),
+            "--via snap: use release, source, pypi, crates or flatpak"
+        );
+        assert_eq!(
+            parse(&["--nope"]).err().unwrap(),
+            "unknown option --nope (see --help)"
+        );
+    }
+
+    #[test]
+    fn help_and_version_become_the_command() {
+        assert_eq!(parse(&["list", "-h"]).unwrap().rest, ["help", "list"]);
+        assert_eq!(parse(&["--version"]).unwrap().rest, ["version"]);
+    }
+
+    #[test]
+    fn the_update_column_is_empty_offline_and_for_what_is_not_installed() {
+        let available = Update::Available { to: "v2".into() };
+        assert_eq!(update_column(&available, true, true), "v2 available");
+        assert_eq!(update_column(&available, false, true), "");
+        assert_eq!(update_column(&available, true, false), "");
+        assert_eq!(update_column(&Update::UpToDate, true, true), "up to date");
+        let unknown = Update::Unknown { reason: None };
+        assert_eq!(update_column(&unknown, true, true), "?");
     }
 }
