@@ -13,6 +13,7 @@ homepage.workspace = true
 
 [dependencies]
 vinopilot-core.workspace = true
+lexopt = "0.3"
 serde_json.workspace = true
 
 [dev-dependencies]

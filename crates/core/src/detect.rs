@@ -92,39 +92,61 @@ impl Paths {
 }
 
 /// The installs `cargo install` keeps in `~/.cargo/.crates.toml`: crate name
-/// to where it came from.
+/// to where it came from. Its `[v1]` keys read
+/// `"ovfetch 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)"`.
 pub fn parse_crates_toml(text: &str) -> HashMap<String, (String, Channel)> {
-    let mut out = HashMap::new();
-    for line in text.lines() {
-        // "ovfetch 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = ["ovfetch"]
-        let Some(key) = line.strip_prefix('"').and_then(|l| l.split('"').next()) else {
-            continue;
-        };
-        let mut parts = key.splitn(3, ' ');
-        let (Some(name), Some(version), Some(source)) = (parts.next(), parts.next(), parts.next())
-        else {
-            continue;
-        };
-        let channel = if source.starts_with("(registry+") || source.starts_with("(sparse+") {
-            Channel::Package
-        } else {
-            Channel::Source
-        };
-        out.insert(name.to_string(), (version.to_string(), channel));
-    }
-    out
+    let Ok(records) = text.parse::<toml::Table>() else {
+        return HashMap::new();
+    };
+    let Some(installs) = records.get("v1").and_then(toml::Value::as_table) else {
+        return HashMap::new();
+    };
+    installs
+        .keys()
+        .filter_map(|key| crate_install(key))
+        .collect()
+}
+
+/// One `.crates.toml` key, `name version (source)`.
+fn crate_install(key: &str) -> Option<(String, (String, Channel))> {
+    let mut parts = key.splitn(3, ' ');
+    let (name, version, source) = (parts.next()?, parts.next()?, parts.next()?);
+    let channel = if source.starts_with("(registry+") || source.starts_with("(sparse+") {
+        Channel::Package
+    } else {
+        Channel::Source
+    };
+    Some((name.to_string(), (version.to_string(), channel)))
 }
 
 /// How a `uv tool` was installed, from its `uv-receipt.toml`: by name from
 /// PyPI, a release's wheel, or a local directory.
 pub fn parse_uv_receipt(text: &str) -> Channel {
-    let requirements = text
-        .lines()
-        .find(|l| l.trim_start().starts_with("requirements"))
-        .unwrap_or("");
-    if requirements.contains(".whl") {
+    let Ok(receipt) = text.parse::<toml::Table>() else {
+        return Channel::Package;
+    };
+    let requirements = receipt
+        .get("tool")
+        .and_then(|tool| tool.get("requirements"))
+        .or_else(|| receipt.get("requirements"))
+        .and_then(toml::Value::as_array);
+    let requirements: Vec<&toml::Table> = requirements
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_table)
+        .collect();
+    let from_a_wheel = |requirement: &&toml::Table| {
+        requirement
+            .values()
+            .filter_map(toml::Value::as_str)
+            .any(|value| value.contains(".whl"))
+    };
+    let from_a_folder = |requirement: &&toml::Table| {
+        requirement.contains_key("directory") || requirement.contains_key("editable")
+    };
+    if requirements.iter().any(from_a_wheel) {
         Channel::Release
-    } else if requirements.contains("directory") || requirements.contains("editable") {
+    } else if requirements.iter().any(from_a_folder) {
         Channel::Source
     } else {
         Channel::Package
@@ -158,16 +180,9 @@ pub fn version_in(text: &str) -> Option<String> {
 
 /// The `version = "..."` of a Cargo.toml's `[package]`.
 pub fn cargo_toml_version(text: &str) -> Option<String> {
-    let package = text.split("[package]").nth(1)?;
-    let section = package.split("\n[").next()?;
-    section.lines().find_map(|l| {
-        let rest = l
-            .trim()
-            .strip_prefix("version")?
-            .trim_start()
-            .strip_prefix('=')?;
-        Some(rest.trim().trim_matches('"').to_string())
-    })
+    let manifest = text.parse::<toml::Table>().ok()?;
+    let version = manifest.get("package")?.get("version")?.as_str()?;
+    Some(version.to_string())
 }
 
 /// Runs `program --version` for at most two seconds: a binary that opens a
@@ -504,81 +519,127 @@ fn authface_channel(version: Option<&str>) -> Channel {
     }
 }
 
-/// `id` as installed in the home (or, for vinoAuthFace, under /usr/local),
-/// from what its installer leaves behind.
-fn home_install(
-    paths: &Paths,
-    id: Id,
-    crates: &HashMap<String, (String, Channel)>,
-    uv_list: &HashMap<String, String>,
-    uv_receipt: Option<&str>,
-) -> Option<Installed> {
-    let installed = |channel, version| Some(Installed { channel, version });
-    let by_marker = |marker: &str, bin: &str| -> Option<Installed> {
-        let bin = first(&[paths.local_bin(bin), paths.cargo_bin(bin)])?;
-        let channel = if paths.local_bin(marker).exists() {
+/// Where vinoAuthFace's installer puts its command, system-wide.
+const AUTHFACE_BIN: &str = "/usr/local/bin/vinoauthface";
+
+/// What a scan knows before it looks at one component: the home, cargo's
+/// install records, and uv's tools.
+struct HomeEvidence<'a> {
+    paths: &'a Paths,
+    /// `~/.cargo/.crates.toml`: crate name to (version, where it came from).
+    crates: &'a HashMap<String, (String, Channel)>,
+    /// `uv tool list`: tool name to version.
+    uv_list: &'a HashMap<String, String>,
+    /// The component's own `uv-receipt.toml`, when it's a uv tool.
+    uv_receipt: Option<&'a str>,
+}
+
+impl HomeEvidence<'_> {
+    /// `id` as installed in the home (or, for vinoAuthFace, under
+    /// /usr/local), from what its installer leaves behind.
+    fn install(&self, id: Id) -> Option<Installed> {
+        match id {
+            Id::App(App::Whisper) => self.uv_tool("vinowhisper", "vinowhisper-setup"),
+            Id::App(App::Speak) => self.uv_tool("vinospeak", "vinospeak"),
+            Id::App(App::Pop) => self.pop(),
+            Id::App(App::Search) => self.marked("vinosearch-upgrade", "vinosearch"),
+            Id::App(App::Watch) => self.marked("vinowatch-upgrade", "vinowatch"),
+            Id::App(App::OpenEffects) => {
+                self.marked("vinoopeneffects-upgrade", "vinoopeneffects-ctl")
+            }
+            Id::App(App::AuthFace) => authface(Path::new(AUTHFACE_BIN)),
+            Id::Ovfetch => self.ovfetch(),
+            Id::App(App::Pilot) => self.pilot(),
+            Id::Ui => None,
+        }
+    }
+
+    /// `command` in `~/.local/bin` or `~/.cargo/bin`: a release when the
+    /// release installer's `marker` (its `<app>-upgrade` copy) is beside it,
+    /// else a source build.
+    fn marked(&self, marker: &str, command: &str) -> Option<Installed> {
+        let found = first(&[self.paths.local_bin(command), self.paths.cargo_bin(command)])?;
+        let channel = if self.paths.local_bin(marker).exists() {
             Channel::Release
         } else {
             Channel::Source
         };
-        installed(channel, ask_version(&bin))
-    };
-    let from_crates = |name: &str| -> Option<Installed> {
-        let (version, channel) = crates.get(name)?;
-        // cargo's record outlives a binary deleted by hand:
-        // `a_release_ovfetch_wins_over_a_cargo_install`.
-        paths.cargo_bin(name).exists().then_some(())?;
-        installed(*channel, Some(version.clone()))
-    };
-    let from_uv = |tool: &str, bin: &str| -> Option<Installed> {
-        match (uv_receipt, uv_list.get(tool)) {
-            (Some(receipt), version) => installed(parse_uv_receipt(receipt), version.cloned()),
-            (None, _) => by_marker(&format!("{tool}-upgrade"), bin),
-        }
-    };
-
-    match id {
-        Id::App(App::Whisper) => from_uv("vinowhisper", "vinowhisper-setup"),
-        Id::App(App::Speak) => from_uv("vinospeak", "vinospeak"),
-        Id::App(App::Pop) => {
-            let release = paths.home.join(".local/share/vinopop/app").exists();
-            paths.local_bin("vinopop").exists().then(|| Installed {
-                channel: if release {
-                    Channel::Release
-                } else {
-                    Channel::Source
-                },
-                version: ask_version(&paths.local_bin("vinopop")),
-            })
-        }
-        Id::App(App::Search) => by_marker("vinosearch-upgrade", "vinosearch"),
-        Id::App(App::Watch) => by_marker("vinowatch-upgrade", "vinowatch"),
-        Id::App(App::OpenEffects) => by_marker("vinoopeneffects-upgrade", "vinoopeneffects-ctl"),
-        Id::App(App::AuthFace) => {
-            let bin = Path::new("/usr/local/bin/vinoauthface");
-            bin.exists().then(|| {
-                let version = ask_version(bin);
-                let channel = authface_channel(version.as_deref());
-                Installed { channel, version }
-            })
-        }
-        Id::Ovfetch => {
-            let bin = paths.local_bin("ovfetch");
-            if bin.exists() {
-                installed(Channel::Release, ask_version(&bin))
-            } else {
-                from_crates("ovfetch")
-            }
-        }
-        Id::App(App::Pilot) => {
-            if paths.local_bin("vinopilot-upgrade").exists() {
-                by_marker("vinopilot-upgrade", "vinopilot")
-            } else {
-                from_crates("vinopilot").or_else(|| by_marker("vinopilot-upgrade", "vinopilot"))
-            }
-        }
-        Id::Ui => None,
+        Some(Installed {
+            channel,
+            version: ask_version(&found),
+        })
     }
+
+    /// A `cargo install` of `name`, by cargo's record. The record outlives a
+    /// binary deleted by hand, so the binary has to be there too:
+    /// `a_release_ovfetch_wins_over_a_cargo_install`.
+    fn cargo_installed(&self, name: &str) -> Option<Installed> {
+        let (version, channel) = self.crates.get(name)?;
+        self.paths.cargo_bin(name).exists().then(|| Installed {
+            channel: *channel,
+            version: Some(version.clone()),
+        })
+    }
+
+    /// A uv tool by its receipt, at the version `uv tool list` gives it.
+    /// Without a receipt it isn't uv's: the marker says.
+    fn uv_tool(&self, tool: &str, command: &str) -> Option<Installed> {
+        match self.uv_receipt {
+            Some(receipt) => Some(Installed {
+                channel: parse_uv_receipt(receipt),
+                version: self.uv_list.get(tool).cloned(),
+            }),
+            None => self.marked(&format!("{tool}-upgrade"), command),
+        }
+    }
+
+    /// vinoPop's release unpacks into `~/.local/share/vinopop/app`; a source
+    /// install runs from its checkout.
+    fn pop(&self) -> Option<Installed> {
+        let command = self.paths.local_bin("vinopop");
+        let unpacked_release = self.paths.home.join(".local/share/vinopop/app").exists();
+        command.exists().then(|| Installed {
+            channel: if unpacked_release {
+                Channel::Release
+            } else {
+                Channel::Source
+            },
+            version: ask_version(&command),
+        })
+    }
+
+    /// The release's bare binary in `~/.local/bin` runs before a cargo
+    /// install's.
+    fn ovfetch(&self) -> Option<Installed> {
+        let release = self.paths.local_bin("ovfetch");
+        if release.exists() {
+            Some(Installed {
+                channel: Channel::Release,
+                version: ask_version(&release),
+            })
+        } else {
+            self.cargo_installed("ovfetch")
+        }
+    }
+
+    /// The release's marker first, then cargo's record, then a binary with
+    /// neither (a source build).
+    fn pilot(&self) -> Option<Installed> {
+        let by_marker = || self.marked("vinopilot-upgrade", "vinopilot");
+        if self.paths.local_bin("vinopilot-upgrade").exists() {
+            by_marker()
+        } else {
+            self.cargo_installed("vinopilot").or_else(by_marker)
+        }
+    }
+}
+
+fn authface(command: &Path) -> Option<Installed> {
+    command.exists().then(|| {
+        let version = ask_version(command);
+        let channel = authface_channel(version.as_deref());
+        Installed { channel, version }
+    })
 }
 
 /// A library is "installed" when its checkout is there, at its Cargo.toml's
@@ -604,7 +665,13 @@ fn local(
     let in_home = if id == Id::Ui {
         checkout.as_ref().map(library_checkout)
     } else {
-        home_install(paths, id, crates, uv_list, uv_receipt.as_deref())
+        HomeEvidence {
+            paths,
+            crates,
+            uv_list,
+            uv_receipt: uv_receipt.as_deref(),
+        }
+        .install(id)
     };
     // A copy in the home runs first; without one, vinoPilot is its package,
     // and an app its Flatpak.
@@ -633,6 +700,151 @@ mod tests {
             system_bin: home.join("usr/bin"),
             system_flatpak: home.join("var/lib/flatpak"),
         }
+    }
+
+    /// A throwaway home with `commands` in `~/.local/bin`, each answering
+    /// `--version` with its own name and `version`.
+    fn home_with(name: &str, version: &str, commands: &[&str]) -> PathBuf {
+        let home = std::env::temp_dir().join(format!("vinopilot-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        for command in commands {
+            put_command(&home.join(".local/bin").join(command), version);
+        }
+        home
+    }
+
+    fn put_command(path: &Path, version: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy();
+        std::fs::write(path, format!("#!/bin/sh\necho '{name} {version}'\n")).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn installed_in(home: &Path, id: Id) -> Option<Installed> {
+        local(
+            &paths_under(home),
+            id,
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
+        )
+        .installed
+    }
+
+    fn at(channel: Channel, version: &str) -> Option<Installed> {
+        Some(Installed {
+            channel,
+            version: Some(version.into()),
+        })
+    }
+
+    #[test]
+    fn a_command_beside_its_upgrade_script_is_a_release() {
+        let home = home_with("marker", "8.0.0", &["vinosearch", "vinosearch-upgrade"]);
+        let search = Id::App(App::Search);
+        assert_eq!(installed_in(&home, search), at(Channel::Release, "8.0.0"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_command_without_its_upgrade_script_is_a_source_build() {
+        let home = home_with("nomarker", "8.0.0", &["vinosearch"]);
+        let search = Id::App(App::Search);
+        assert_eq!(installed_in(&home, search), at(Channel::Source, "8.0.0"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_command_only_in_cargos_bin_is_a_source_build() {
+        let home = home_with("cargobin", "", &[]);
+        put_command(&home.join(".cargo/bin/vinowatch"), "0.9.0");
+        let watch = Id::App(App::Watch);
+        assert_eq!(installed_in(&home, watch), at(Channel::Source, "0.9.0"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn an_upgrade_script_alone_is_not_an_install() {
+        let home = home_with("onlymarker", "8.0.0", &["vinosearch-upgrade"]);
+        assert_eq!(installed_in(&home, Id::App(App::Search)), None);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn vinoopeneffects_is_told_by_its_ctl_command() {
+        let home = home_with(
+            "effects",
+            "3",
+            &["vinoopeneffects-ctl", "vinoopeneffects-upgrade"],
+        );
+        let effects = Id::App(App::OpenEffects);
+        assert_eq!(installed_in(&home, effects), at(Channel::Release, "3"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn vinopop_is_a_release_when_its_app_folder_is_unpacked() {
+        let home = home_with("pop", "1.4.0", &["vinopop"]);
+        let pop = Id::App(App::Pop);
+        assert_eq!(installed_in(&home, pop), at(Channel::Source, "1.4.0"));
+        std::fs::create_dir_all(home.join(".local/share/vinopop/app")).unwrap();
+        assert_eq!(installed_in(&home, pop), at(Channel::Release, "1.4.0"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_uv_receipt_decides_over_the_upgrade_script() {
+        let home = home_with("uv", "9.9.9", &["vinospeak", "vinospeak-upgrade"]);
+        let paths = paths_under(&home);
+        let speak = Id::App(App::Speak);
+        let uv_list = HashMap::from([("vinospeak".to_string(), "0.5.1".to_string())]);
+        let found = |receipt: Option<&str>| {
+            local(
+                &paths,
+                speak,
+                &HashMap::new(),
+                &uv_list,
+                receipt.map(str::to_string),
+            )
+            .installed
+        };
+        let pypi = r#"requirements = [{ name = "vinospeak", specifier = "==0.5.1" }]"#;
+        assert_eq!(found(Some(pypi)), at(Channel::Package, "0.5.1"));
+        // No receipt: not uv's, so the marker and the binary's own version.
+        assert_eq!(found(None), at(Channel::Release, "9.9.9"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn vinopilot_is_its_release_then_cargos_record_then_a_source_build() {
+        let home = home_with("pilot", "0.5.0", &[]);
+        let paths = paths_under(&home);
+        let pilot = Id::App(App::Pilot);
+        let crates = HashMap::from([(
+            "vinopilot".to_string(),
+            ("0.4.0".to_string(), Channel::Package),
+        )]);
+        let found = || local(&paths, pilot, &crates, &HashMap::new(), None).installed;
+        put_command(&home.join(".cargo/bin/vinopilot"), "0.4.0");
+        assert_eq!(found(), at(Channel::Package, "0.4.0"));
+        put_command(&home.join(".local/bin/vinopilot"), "0.5.0");
+        assert_eq!(found(), at(Channel::Package, "0.4.0"));
+        put_command(&home.join(".local/bin/vinopilot-upgrade"), "0.5.0");
+        assert_eq!(found(), at(Channel::Release, "0.5.0"));
+        // Neither a marker nor a record: a build someone copied in.
+        let found = installed_in(&home_with("pilotsrc", "0.5.0", &["vinopilot"]), pilot);
+        assert_eq!(found, at(Channel::Source, "0.5.0"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn vinoauthface_is_found_by_its_command_alone() {
+        let home = home_with("authface", "dev", &["vinoauthface"]);
+        let command = home.join(".local/bin/vinoauthface");
+        assert_eq!(authface(&command), at(Channel::Source, "dev"));
+        assert_eq!(authface(&home.join("nowhere")), None);
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
@@ -666,6 +878,62 @@ mod tests {
         assert_eq!(parse_uv_receipt(pypi), Channel::Package);
         assert_eq!(parse_uv_receipt(wheel), Channel::Release);
         assert_eq!(parse_uv_receipt(dir), Channel::Source);
+    }
+
+    #[test]
+    fn a_crates_toml_with_no_installs_or_that_is_not_toml_has_none() {
+        assert!(parse_crates_toml("").is_empty());
+        assert!(parse_crates_toml("[v1]\n").is_empty());
+        assert!(parse_crates_toml("[v2]\n\"ovfetch 0.6.0 (registry+x)\" = []\n").is_empty());
+        assert!(parse_crates_toml("[v1\n\"ovfetch 0.6.0 (registry+x)\" = [\n").is_empty());
+        // A key that isn't `name version (source)` is skipped, not guessed at.
+        assert!(parse_crates_toml("[v1]\n\"ovfetch\" = []\n").is_empty());
+    }
+
+    #[test]
+    fn a_sparse_registry_is_crates_io_too() {
+        let text = "[v1]\n\"ovfetch 0.6.0 (sparse+https://index.crates.io/)\" = [\"ovfetch\"]\n";
+        assert_eq!(
+            parse_crates_toml(text)["ovfetch"],
+            ("0.6.0".into(), Channel::Package)
+        );
+    }
+
+    #[test]
+    fn a_uv_receipt_is_read_under_its_tool_table_as_uv_writes_it() {
+        let receipt = |requirement: &str| {
+            format!("[tool]\nrequirements = [{requirement}]\nentrypoints = []\n")
+        };
+        let wheel = receipt(
+            r#"{ name = "vinowhisper", path = "/tmp/x/vinowhisper-1.3.1-py3-none-any.whl" }"#,
+        );
+        let editable = receipt(r#"{ name = "vinospeak", editable = "/home/k/vinoSpeak" }"#);
+        let pypi = receipt(r#"{ name = "vinospeak" }"#);
+        assert_eq!(parse_uv_receipt(&wheel), Channel::Release);
+        assert_eq!(parse_uv_receipt(&editable), Channel::Source);
+        assert_eq!(parse_uv_receipt(&pypi), Channel::Package);
+    }
+
+    #[test]
+    fn a_uv_receipt_without_requirements_or_that_is_not_toml_reads_as_pypi() {
+        assert_eq!(parse_uv_receipt(""), Channel::Package);
+        assert_eq!(
+            parse_uv_receipt("[tool]\nentrypoints = []\n"),
+            Channel::Package
+        );
+        assert_eq!(
+            parse_uv_receipt("requirements = [{ name ="),
+            Channel::Package
+        );
+    }
+
+    #[test]
+    fn a_cargo_toml_without_its_own_version_or_that_is_not_toml_has_none() {
+        let inherited = "[package]\nname = \"x\"\nversion.workspace = true\n";
+        assert_eq!(cargo_toml_version(inherited), None);
+        let workspace = "[workspace.package]\nversion = \"0.5.0\"\n";
+        assert_eq!(cargo_toml_version(workspace), None);
+        assert_eq!(cargo_toml_version("[package\nversion = \"1\""), None);
     }
 
     #[test]

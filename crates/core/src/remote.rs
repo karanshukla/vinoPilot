@@ -48,8 +48,13 @@ fn found<T: serde::Serialize, S: serde::Serializer>(
     }
 }
 
-/// The body of a 200, or why there isn't one.
-fn get(url: &str, accept: &str) -> Result<String, String> {
+/// A GET: the body of a 200, or why there isn't one. [`curl`] is the real
+/// one; the lookups take it as an argument so the tests can answer for it.
+type Fetch<'a> = &'a dyn Fn(&str, &str) -> Result<String, String>;
+
+/// `url` through curl, asking for `accept`. The only thing here that opens
+/// a connection, besides `git fetch`.
+fn curl(url: &str, accept: &str) -> Result<String, String> {
     let out = crate::command("curl")
         .args(["-sSL", "--max-time", "10", "--max-filesize", "4194304"])
         .args(["-A", USER_AGENT, "-H", &format!("Accept: {accept}")])
@@ -58,19 +63,28 @@ fn get(url: &str, accept: &str) -> Result<String, String> {
         .stderr(Stdio::null())
         .output()
         .map_err(|_| "curl isn't installed".to_string())?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let (body, code) = text.rsplit_once('\n').unwrap_or(("", &text));
+    read_response(&String::from_utf8_lossy(&out.stdout), out.status.success())
+}
+
+/// What curl printed, as the body of a 200 or a sentence for the row: the
+/// body, then the status code on a line of its own (`-w "\n%{http_code}"`).
+fn read_response(printed: &str, curl_succeeded: bool) -> Result<String, String> {
+    let (body, code) = printed.rsplit_once('\n').unwrap_or(("", printed));
     match code.trim() {
         "200" => Ok(body.to_string()),
         "404" => Err("not published yet".into()),
         "403" | "429" => Err("rate-limited; try again later".into()),
-        _ if !out.status.success() => Err("offline, or the server didn't answer".into()),
+        _ if !curl_succeeded => Err("offline, or the server didn't answer".into()),
         code => Err(format!("the server said {code}")),
     }
 }
 
 pub fn release(repo: &str) -> Result<String, String> {
-    let json = get(
+    release_from(&curl, repo)
+}
+
+fn release_from(fetch: Fetch, repo: &str) -> Result<String, String> {
+    let json = fetch(
         &format!("https://api.github.com/repos/{repo}/releases/latest"),
         "application/vnd.github+json",
     )?;
@@ -103,16 +117,20 @@ pub fn crates_version(json: &str) -> Option<String> {
 }
 
 pub fn package(package: Package) -> Result<String, String> {
+    package_from(&curl, package)
+}
+
+fn package_from(fetch: Fetch, package: Package) -> Result<String, String> {
     match package {
         Package::PyPi(name) => {
-            let json = get(
+            let json = fetch(
                 &format!("https://pypi.org/pypi/{name}/json"),
                 "application/json",
             )?;
             pypi_version(&json).ok_or_else(|| "not on PyPI".into())
         }
         Package::Crate(name) | Package::Library(name) => {
-            let json = get(
+            let json = fetch(
                 &format!("https://crates.io/api/v1/crates/{name}"),
                 "application/json",
             )?;
@@ -121,29 +139,41 @@ pub fn package(package: Package) -> Result<String, String> {
     }
 }
 
+/// What a git command said: whether it exited zero, and its stdout.
+struct GitAnswer {
+    succeeded: bool,
+    stdout: String,
+}
+
+/// The commit a worktree install built, recorded by the catalog's
+/// `checkout_done` when the checkout itself is on another branch.
+const INSTALLED_REF: &str = "refs/vinopilot/installed";
+
 fn behind(checkout: &Path) -> Result<u32, String> {
-    let run = |args: &[&str]| {
-        crate::command("git")
+    behind_by(&|args| {
+        let out = crate::command("git")
             .arg("-C")
             .arg(checkout)
             .args(args)
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
-            .map_err(|_| "git isn't installed".to_string())
-    };
-    if !run(&["fetch", "--quiet"])?.status.success() {
+            .map_err(|_| "git isn't installed".to_string())?;
+        Ok(GitAnswer {
+            succeeded: out.status.success(),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        })
+    })
+}
+
+/// Commits behind after a fetch: from what was installed when a worktree
+/// install recorded it, else from the checkout's own branch to its upstream.
+fn behind_by(git: &dyn Fn(&[&str]) -> Result<GitAnswer, String>) -> Result<u32, String> {
+    if !git(&["fetch", "--quiet"])?.succeeded {
         return Err("git fetch failed".into());
     }
-    // A checkout on another branch was installed from a worktree of the
-    // default branch, which recorded what it built (catalog's checkout_done).
-    let installed = run(&[
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        "refs/vinopilot/installed",
-    ])?;
-    let (range, missing) = if installed.status.success() {
+    let recorded = git(&["rev-parse", "--verify", "--quiet", INSTALLED_REF])?.succeeded;
+    let (range, missing) = if recorded {
         (
             "refs/vinopilot/installed..refs/remotes/origin/HEAD",
             "origin has no default branch",
@@ -151,11 +181,12 @@ fn behind(checkout: &Path) -> Result<u32, String> {
     } else {
         ("HEAD..@{upstream}", "the branch has no upstream")
     };
-    let out = run(&["rev-list", "--count", range])?;
-    if !out.status.success() {
+    let count = git(&["rev-list", "--count", range])?;
+    if !count.succeeded {
         return Err(missing.into());
     }
-    String::from_utf8_lossy(&out.stdout)
+    count
+        .stdout
         .trim()
         .parse()
         .map_err(|_| "git said something odd".into())
@@ -204,6 +235,153 @@ mod tests {
         );
         assert_eq!(pypi_version(r#"{"info":{"version":"<b>1</b>"}}"#), None);
         assert_eq!(crates_version("not json"), None);
+    }
+
+    #[test]
+    fn a_200_is_its_body_and_every_other_answer_a_sentence() {
+        assert_eq!(
+            read_response("{\"a\":\n1}\n200", true).unwrap(),
+            "{\"a\":\n1}"
+        );
+        let why = |printed, ok| read_response(printed, ok).unwrap_err();
+        assert_eq!(why("Not Found\n404", true), "not published yet");
+        assert_eq!(why("\n403", true), "rate-limited; try again later");
+        assert_eq!(why("\n429", true), "rate-limited; try again later");
+        assert_eq!(why("oops\n500", true), "the server said 500");
+        assert_eq!(why("\n000", false), "offline, or the server didn't answer");
+        assert_eq!(why("", false), "offline, or the server didn't answer");
+    }
+
+    /// A fetch that answers `body` and writes down what it was asked for.
+    fn answering<'a>(
+        body: Result<&'a str, &'a str>,
+        asked: &'a std::cell::RefCell<Vec<String>>,
+    ) -> impl Fn(&str, &str) -> Result<String, String> + 'a {
+        move |url, _accept| {
+            asked.borrow_mut().push(url.to_string());
+            body.map(str::to_string).map_err(str::to_string)
+        }
+    }
+
+    #[test]
+    fn a_release_is_the_latest_tag_github_names() {
+        let asked = Default::default();
+        let fetch = answering(Ok(r#"{"tag_name":"v8"}"#), &asked);
+        assert_eq!(
+            release_from(&fetch, "karanshukla/vinoSearch").unwrap(),
+            "v8"
+        );
+        assert_eq!(
+            *asked.borrow(),
+            ["https://api.github.com/repos/karanshukla/vinoSearch/releases/latest"]
+        );
+        let fetch = answering(Ok("{}"), &asked);
+        assert_eq!(release_from(&fetch, "a/b").unwrap_err(), "no release yet");
+        let fetch = answering(Err("not published yet"), &asked);
+        assert_eq!(
+            release_from(&fetch, "a/b").unwrap_err(),
+            "not published yet"
+        );
+    }
+
+    #[test]
+    fn a_package_is_asked_of_its_own_registry() {
+        let asked = Default::default();
+        let pypi = answering(Ok(r#"{"info":{"version":"1.3.1"}}"#), &asked);
+        assert_eq!(
+            package_from(&pypi, Package::PyPi("vinowhisper")).unwrap(),
+            "1.3.1"
+        );
+        let crates = answering(Ok(r#"{"crate":{"max_version":"0.6.0"}}"#), &asked);
+        assert_eq!(
+            package_from(&crates, Package::Crate("ovfetch")).unwrap(),
+            "0.6.0"
+        );
+        assert_eq!(
+            *asked.borrow(),
+            [
+                "https://pypi.org/pypi/vinowhisper/json",
+                "https://crates.io/api/v1/crates/ovfetch"
+            ]
+        );
+        let empty = answering(Ok("{}"), &asked);
+        assert_eq!(
+            package_from(&empty, Package::PyPi("x")).unwrap_err(),
+            "not on PyPI"
+        );
+        assert_eq!(
+            package_from(&empty, Package::Library("x")).unwrap_err(),
+            "not on crates.io"
+        );
+    }
+
+    /// A git whose `fetch` and `rev-parse` succeed or not, and whose
+    /// `rev-list --count RANGE` prints `count`; the range it was asked for
+    /// is written down.
+    fn fake_git<'a>(
+        fetches: bool,
+        recorded: bool,
+        count: Option<&'a str>,
+        range: &'a std::cell::RefCell<String>,
+    ) -> impl Fn(&[&str]) -> Result<GitAnswer, String> + 'a {
+        move |args| {
+            let (succeeded, stdout) = match args[0] {
+                "fetch" => (fetches, ""),
+                "rev-parse" => (recorded, ""),
+                "rev-list" => {
+                    *range.borrow_mut() = args[2].to_string();
+                    (count.is_some(), count.unwrap_or(""))
+                }
+                other => panic!("unexpected git {other}"),
+            };
+            Ok(GitAnswer {
+                succeeded,
+                stdout: stdout.to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn a_checkout_is_counted_from_its_branch_to_its_upstream() {
+        let range = Default::default();
+        assert_eq!(
+            behind_by(&fake_git(true, false, Some("3\n"), &range)),
+            Ok(3)
+        );
+        assert_eq!(*range.borrow(), "HEAD..@{upstream}");
+        assert_eq!(
+            behind_by(&fake_git(true, false, None, &range)).unwrap_err(),
+            "the branch has no upstream"
+        );
+    }
+
+    #[test]
+    fn a_worktree_install_is_counted_from_the_commit_it_recorded() {
+        let range = Default::default();
+        assert_eq!(behind_by(&fake_git(true, true, Some("0\n"), &range)), Ok(0));
+        assert_eq!(
+            *range.borrow(),
+            "refs/vinopilot/installed..refs/remotes/origin/HEAD"
+        );
+        assert_eq!(
+            behind_by(&fake_git(true, true, None, &range)).unwrap_err(),
+            "origin has no default branch"
+        );
+    }
+
+    #[test]
+    fn a_failed_fetch_or_an_odd_count_is_said_not_guessed() {
+        let range = Default::default();
+        assert_eq!(
+            behind_by(&fake_git(false, false, Some("3"), &range)).unwrap_err(),
+            "git fetch failed"
+        );
+        assert_eq!(
+            behind_by(&fake_git(true, false, Some("many"), &range)).unwrap_err(),
+            "git said something odd"
+        );
+        let no_git = |_: &[&str]| Err("git isn't installed".to_string());
+        assert_eq!(behind_by(&no_git).unwrap_err(), "git isn't installed");
     }
 
     #[test]
