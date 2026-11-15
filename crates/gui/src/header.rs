@@ -113,13 +113,7 @@ impl Pilot {
                 }
             }
             (update, _) => {
-                let (label, hover) = match update {
-                    Update::UpToDate => (format!("{VERSION} · up to date"), "Check again".into()),
-                    Update::Unknown { reason: Some(why) } => {
-                        (VERSION.to_string(), format!("{why}. Check again"))
-                    }
-                    _ => (VERSION.to_string(), "Check for a newer vinoPilot".into()),
-                };
+                let (label, hover) = check_button_text(update);
                 if ui
                     .add(Button::ghost(label).small())
                     .on_hover_text(format!("{hover}. {how}."))
@@ -273,6 +267,18 @@ impl Pilot {
     }
 }
 
+/// The version button's label and hover when there's nothing to update
+/// to: pressing it checks, or checks again.
+fn check_button_text(update: Update) -> (String, String) {
+    match update {
+        Update::UpToDate => (format!("{VERSION} · up to date"), "Check again".into()),
+        Update::Unknown { reason: Some(why) } => {
+            (VERSION.to_string(), format!("{why}. Check again"))
+        }
+        _ => (VERSION.to_string(), "Check for a newer vinoPilot".into()),
+    }
+}
+
 fn site_link(ui: &mut egui::Ui) {
     if ui
         .add(Button::ghost(vino_ui::family::SITE_LABEL).small())
@@ -313,5 +319,30 @@ fn restart(ctx: &egui::Context, flatpak: bool) {
     match new.spawn() {
         Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         Err(e) => eprintln!("vinopilot: couldn't start the new vinopilot-gui: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_version_button_says_up_to_date_only_after_a_check_that_found_nothing() {
+        let (label, hover) = check_button_text(Update::UpToDate);
+        assert_eq!(label, format!("{VERSION} · up to date"));
+        assert_eq!(hover, "Check again");
+        let (label, hover) = check_button_text(Update::Unknown { reason: None });
+        assert_eq!(label, VERSION);
+        assert_eq!(hover, "Check for a newer vinoPilot");
+    }
+
+    #[test]
+    fn the_version_button_gives_a_failed_checks_reason_on_hover() {
+        let failed = Update::Unknown {
+            reason: Some("rate-limited; try again later".into()),
+        };
+        let (label, hover) = check_button_text(failed);
+        assert_eq!(label, VERSION);
+        assert_eq!(hover, "rate-limited; try again later. Check again");
     }
 }

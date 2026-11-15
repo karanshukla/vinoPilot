@@ -37,11 +37,7 @@ pub(super) const CARDS: [Id; 9] = [
 impl Pilot {
     pub(super) fn grid(&mut self, ui: &mut egui::Ui) {
         let width = ui.available_width();
-        let columns = if width + GAP >= COLUMNS as f32 * (CARD_MIN + GAP) {
-            COLUMNS
-        } else {
-            1
-        };
+        let columns = columns_in(width);
         let card = (width - GAP * (columns - 1) as f32) / columns as f32;
         for chunk in CARDS.chunks(columns) {
             ui.horizontal_top(|ui| {
@@ -80,7 +76,7 @@ impl Pilot {
         }
         let mut copy_clicked = false;
         let options: Vec<(Channel, &str)> = channels.iter().map(|c| (*c, c.label(id))).collect();
-        let ways_above = channels.len() > 3 && width - 2.0 * margin - 2.0 < WAYS_BESIDE;
+        let ways_above = ways_go_above(channels.len(), width - 2.0 * margin - 2.0);
         let install_from = format!("Install {} from", id.name());
 
         egui::Frame::new()
@@ -210,6 +206,21 @@ impl Pilot {
     }
 }
 
+/// Three columns when three cards of `CARD_MIN` fit in `width`, else one.
+fn columns_in(width: f32) -> usize {
+    if width + GAP >= COLUMNS as f32 * (CARD_MIN + GAP) {
+        COLUMNS
+    } else {
+        1
+    }
+}
+
+/// Whether a card `inner` wide puts its ways in on a row above Install:
+/// only four of them, and only when they don't fit beside it.
+fn ways_go_above(ways: usize, inner: f32) -> bool {
+    ways > 3 && inner < WAYS_BESIDE
+}
+
 /// How long a distro tag says "copied".
 const COPIED_FOR: f64 = 1.5;
 
@@ -279,5 +290,36 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
     if id == Id::App(vino_ui::App::Pilot) && version != VERSION {
         shown.on_hover_text(format!("This window is {VERSION}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn three_cards_that_fit_are_three_columns() {
+        let fits = COLUMNS as f32 * CARD_MIN + (COLUMNS - 1) as f32 * GAP;
+        assert_eq!(columns_in(fits), COLUMNS);
+        assert_eq!(columns_in(PAGE_MAX), COLUMNS);
+    }
+
+    #[test]
+    fn a_pixel_short_of_three_cards_is_one_column() {
+        let fits = COLUMNS as f32 * CARD_MIN + (COLUMNS - 1) as f32 * GAP;
+        assert_eq!(columns_in(fits - 1.0), 1);
+        assert_eq!(columns_in(420.0), 1);
+    }
+
+    #[test]
+    fn four_ways_in_go_above_install_on_a_card_too_narrow_for_them() {
+        assert!(ways_go_above(4, WAYS_BESIDE - 1.0));
+        assert!(!ways_go_above(4, WAYS_BESIDE));
+    }
+
+    #[test]
+    fn three_ways_in_stay_beside_install_however_narrow() {
+        assert!(!ways_go_above(3, WAYS_BESIDE - 1.0));
+        assert!(!ways_go_above(1, 0.0));
     }
 }
