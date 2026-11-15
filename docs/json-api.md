@@ -1,6 +1,6 @@
 # The JSON API
 
-`vinopilot --json` is the contract between vinoPilot's core and any frontend not written in Rust (the planned Python TUI). Breaking it needs a changelog entry. `crates/cli/tests/cli.rs` pins it.
+`vinopilot --json` is the contract between vinoPilot's core and any frontend not written in Rust (the Python TUI in `tui/`). Breaking it needs a changelog entry. `crates/cli/tests/cli.rs` pins it.
 
 ## list and check
 
