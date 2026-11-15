@@ -555,6 +555,33 @@ mod tests {
     }
 
     #[test]
+    fn a_double_dash_ends_the_options() {
+        let args = parse(&["--json", "install", "--", "--all", "-y"]).unwrap();
+        assert!(args.json && !args.all && !args.yes);
+        assert_eq!(args.rest, ["install", "--all", "-y"]);
+    }
+
+    #[test]
+    fn short_options_cluster() {
+        let args = parse(&["uninstall", "pop", "-yh"]).unwrap();
+        assert!(args.yes);
+        assert_eq!(args.rest, ["help", "uninstall", "pop"]);
+        assert_eq!(
+            parse(&["-yx"]).err().unwrap(),
+            "unknown option -x (see --help)"
+        );
+    }
+
+    #[test]
+    fn a_value_on_an_option_that_takes_none_is_refused() {
+        assert_eq!(
+            parse(&["--json=x", "list"]).err().unwrap(),
+            "unexpected argument for option '--json': \"x\""
+        );
+        assert!(parse(&["--json", "list"]).is_ok());
+    }
+
+    #[test]
     fn help_and_version_become_the_command() {
         assert_eq!(parse(&["list", "-h"]).unwrap().rest, ["help", "list"]);
         assert_eq!(parse(&["--version"]).unwrap().rest, ["version"]);
