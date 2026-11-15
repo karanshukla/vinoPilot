@@ -264,8 +264,6 @@ class PilotApp(App[None]):
             return
         self.scan(False)
 
-    # --- the table ---------------------------------------------------------
-
     @work(thread=True, exclusive=True, group="scan")
     def scan(self, online: bool) -> None:
         assert self.pilot is not None
@@ -369,8 +367,6 @@ class PilotApp(App[None]):
             self.notify("Still looking", severity="warning")
             return False
         return True
-
-    # --- actions -----------------------------------------------------------
 
     def action_check(self) -> None:
         if self.ready():
@@ -492,8 +488,6 @@ class PilotApp(App[None]):
         if self.job is not None:
             self.job.stop()
         self.exit()
-
-    # --- jobs --------------------------------------------------------------
 
     @work(thread=True, exclusive=True, group="job")
     def run_job(self, job: Job) -> None:

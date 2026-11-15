@@ -31,6 +31,18 @@ def find() -> str | None:
     return shutil.which("vinopilot", path=f"{path}{os.pathsep}{local}")
 
 
+def _spawn_line_buffered(argv: list[str]) -> subprocess.Popen[str]:
+    """A child with no stdin, whose stdout and stderr arrive merged, a line at a time."""
+    return subprocess.Popen(
+        argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+
 class CommandError(Exception):
     """The command exited non-zero where a document was expected."""
 
@@ -151,15 +163,7 @@ class Pilot:
         """Starts an action; its output arrives as `Event`s, stderr merged in."""
         argv = self._args(*args)
         argv.insert(1, "--json")
-        process = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        return Job(process, label)
+        return Job(_spawn_line_buffered(argv), label)
 
     def install(self, app: str, via: str) -> Job:
         return self.start(f"Installing {app}", "install", app, "--via", via)
@@ -176,12 +180,4 @@ class Pilot:
 
 def installer() -> Job:
     """Runs the release installer, to get the command when there is none."""
-    process = subprocess.Popen(
-        INSTALL_COMMAND,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    return Job(process, "Installing vinopilot")
+    return Job(_spawn_line_buffered(INSTALL_COMMAND), "Installing vinopilot")
