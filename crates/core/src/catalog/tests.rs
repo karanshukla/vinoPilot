@@ -358,6 +358,14 @@ fn components_parse_by_slug_name_or_bare_name() {
     assert_eq!(Id::parse("nope"), None);
 }
 
+/// GitHub ignores the repo's case; the checkout folder, named after it,
+/// doesn't, and a `vinoPilot` here would be a second checkout.
+#[test]
+fn vinopilots_checkout_folder_is_lowercase() {
+    assert_eq!(Id::App(App::Pilot).checkout_name(), "vinopilot");
+    assert_eq!(Id::App(App::Pilot).repo(), "karanshukla/vinopilot");
+}
+
 #[test]
 fn checkout_names_match_the_repos() {
     assert_eq!(Id::App(App::Search).checkout_name(), "vinoSearch");

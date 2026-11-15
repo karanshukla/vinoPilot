@@ -500,6 +500,16 @@ pub fn scan(paths: &Paths) -> HashMap<Id, Local> {
     handles.into_iter().filter_map(|h| h.join().ok()).collect()
 }
 
+/// vinoAuthFace leaves no marker: its release builds are stamped with their
+/// tag, and a checkout's build says `dev`.
+fn authface_channel(version: Option<&str>) -> Channel {
+    if version == Some("dev") {
+        Channel::Source
+    } else {
+        Channel::Release
+    }
+}
+
 /// `id` as installed in the home (or, for vinoAuthFace, under /usr/local),
 /// from what its installer leaves behind.
 fn home_install(
@@ -554,12 +564,7 @@ fn home_install(
             let bin = Path::new("/usr/local/bin/vinoauthface");
             bin.exists().then(|| {
                 let version = ask_version(bin);
-                // Release builds are stamped with their tag; a checkout's is `dev`.
-                let channel = if version.as_deref() == Some("dev") {
-                    Channel::Source
-                } else {
-                    Channel::Release
-                };
+                let channel = authface_channel(version.as_deref());
                 Installed { channel, version }
             })
         }
@@ -634,6 +639,17 @@ mod tests {
             system_bin: home.join("usr/bin"),
             system_flatpak: home.join("var/lib/flatpak"),
         }
+    }
+
+    #[test]
+    fn a_vinoauthface_that_says_dev_is_a_source_build() {
+        assert_eq!(authface_channel(Some("dev")), Channel::Source);
+    }
+
+    #[test]
+    fn a_vinoauthface_with_a_version_or_none_is_a_release() {
+        assert_eq!(authface_channel(Some("12")), Channel::Release);
+        assert_eq!(authface_channel(None), Channel::Release);
     }
 
     #[test]

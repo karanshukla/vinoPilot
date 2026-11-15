@@ -74,8 +74,8 @@ impl Id {
     /// `owner/name` on GitHub.
     pub fn repo(self) -> &'static str {
         match self {
-            // Lowercase like its release URLs and the checkout folder
-            // install.sh makes; GitHub ignores case, the folder name doesn't.
+            // Lowercase like its release URLs and its checkout folder:
+            // `vinopilots_checkout_folder_is_lowercase`.
             Id::App(App::Pilot) => "karanshukla/vinopilot",
             Id::App(app) => app.repo(),
             Id::Ovfetch => "karanshukla/ovfetch",
