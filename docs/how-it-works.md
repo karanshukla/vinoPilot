@@ -9,7 +9,7 @@ vinoPilot doesn't install anything itself. Each app has its own hash-checked ins
 | Release | the app's one-line installer from its latest GitHub release, which checks the download against the release's `SHA256SUMS` | the `<app>-upgrade` copy each installer keeps | `release` |
 | Source | clones the repo into your source folder, then runs the checkout's own install script | `git pull --ff-only`, then the same again | `source` |
 | Package | `uv tool` for PyPI, `cargo install` for crates.io | the same tools | `pypi`, `crates` |
-| Flatpak (vinoSearch) | the release's Flatpak bundle, checked against the release's checksums and installed with `flatpak install --user` | downloads the new release's bundle over it | `flatpak` |
+| Flatpak (vinoWhisper, vinoSearch) | the release's Flatpak bundle, checked against the release's checksums and installed with `flatpak install --user` | downloads the new release's bundle over it | `flatpak` |
 
 The source folder is `~/Development` if you have one, else `~/src`. Change it in the window or with `vinopilot config source_root DIR`.
 
@@ -88,7 +88,7 @@ Paths and settings reach a script as environment variables (`$CHECKOUT`, `$WORKT
 
 A package step (vinoPilot's .deb and .rpm, and any Flatpak bundle) starts with three helpers:
 
-- `fetch ASSET` downloads that file of the release and checks it against the release's `SHA256SUMS`, as install.sh does the tarball, or against its own `ASSET.sha256` in a release without one (vinoSearch's).
+- `fetch ASSET` downloads that file of the release and checks it against the release's `SHA256SUMS`, as install.sh does the tarball, or against its own `ASSET.sha256` when `SHA256SUMS` has no line for it (vinoWhisper's is written before its bundle is built) or isn't there (vinoSearch's). A wrong hash in `SHA256SUMS` still fails.
 - `as_root` is `pkexec` for the one command that installs a system package. The download and the check stay the user's.
 - `scoped_flatpak` runs `flatpak` where the app is installed. A first install goes to the user's installation: no password, like the other ways in.
 

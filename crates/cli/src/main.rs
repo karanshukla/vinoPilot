@@ -23,7 +23,7 @@ Commands:
   list                       what's installed, and how (offline)
   check                      list, plus the newest version of each (online)
   install <app> [--via WAY]  WAY: release (default), source, pypi, crates or
-                             flatpak (vinosearch)
+                             flatpak (vinowhisper, vinosearch)
   update <app>... | --all    update in the way each is installed
   uninstall <app> [--yes]
   steps <app> <install|update|uninstall> [--via WAY]

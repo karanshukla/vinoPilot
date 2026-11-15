@@ -209,10 +209,10 @@ fn vinopilots_packages_update_from_the_release_checked_and_ask_for_root_themselv
 }
 
 #[test]
-fn vinosearch_also_installs_from_its_flatpak() {
+fn vinowhisper_and_vinosearch_also_install_from_their_flatpak() {
     for id in Id::ALL {
         let offered = id.channels().contains(&Channel::Flatpak);
-        let has = id == Id::App(App::Search);
+        let has = matches!(id, Id::App(App::Whisper | App::Search));
         assert_eq!(offered, has, "{}", id.name());
         // The default way in stays the first.
         assert_ne!(id.channels()[0], Channel::Flatpak);
@@ -220,7 +220,12 @@ fn vinosearch_also_installs_from_its_flatpak() {
             continue;
         }
         let app_id = id.flatpak().unwrap();
-        assert_eq!(app_id, "dev.vinosearch.VinoSearch");
+        let named = if id == Id::App(App::Search) {
+            "dev.vinosearch.VinoSearch"
+        } else {
+            "io.github.karanshukla.vinowhisper"
+        };
+        assert_eq!(app_id, named);
         for action in ACTIONS {
             let steps = steps(id, Channel::Flatpak, action);
             assert_eq!(steps.len(), 1, "{} {action:?}", id.name());
@@ -238,8 +243,9 @@ fn vinosearch_also_installs_from_its_flatpak() {
     }
 }
 
-/// Runs `id`'s Flatpak install against a `file://` release holding
-/// `sums` as the checksum file `sums_name`, with `flatpak` stubbed to
+/// Runs `id`'s Flatpak install against a `file://` release holding the
+/// bundle's checksum in the file `sums_name`, and a `SHA256SUMS` that
+/// lists only other files when that isn't it. `flatpak` is stubbed to
 /// write its arguments down. What it was run with, or the step's stderr.
 fn install_flatpak(id: Id, sums_name: &str, good: bool, system: bool) -> Result<String, String> {
     use std::fs;
@@ -261,6 +267,11 @@ fn install_flatpak(id: Id, sums_name: &str, good: bool, system: bool) -> Result<
         .unwrap();
     let hash = String::from_utf8_lossy(&sum.stdout)[..64].to_string();
     let hash = if good { hash } else { "0".repeat(64) };
+    fs::write(
+        release.join("SHA256SUMS"),
+        format!("{}  install.sh\n", "1".repeat(64)),
+    )
+    .unwrap();
     fs::write(release.join(sums_name), format!("{hash}  {asset}\n")).unwrap();
     // `info` fails, installed nowhere yet, unless it's `system`-wide.
     let info = if system {
@@ -299,10 +310,14 @@ fn a_flatpak_is_checked_then_installed_for_the_user() {
     if !have(&["bash", "curl", "sha256sum"]) {
         return;
     }
-    // Either checksum file: vinoSearch's release has a .sha256 per file,
-    // the other vino apps' SHA256SUMS.
-    let id = Id::App(App::Search);
-    for sums in ["SHA256SUMS", "vinosearch-x86_64.flatpak.sha256"] {
+    // Either checksum file: vinoPilot's SHA256SUMS lists its bundle;
+    // vinoWhisper's is written before the bundle is built, so the
+    // bundle's is in its own .sha256 beside it.
+    for (id, sums) in [
+        (Id::App(App::Search), "SHA256SUMS"),
+        (Id::App(App::Search), "vinosearch-x86_64.flatpak.sha256"),
+        (Id::App(App::Whisper), "vinowhisper-x86_64.flatpak.sha256"),
+    ] {
         let ran = install_flatpak(id, sums, true, false).unwrap();
         let asset = format!("{}-x86_64.flatpak", id.slug());
         assert!(ran.starts_with("install --user -y "), "{ran}");

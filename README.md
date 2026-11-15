@@ -8,7 +8,7 @@ One place to install, update and uninstall the [vinoPilot](https://vinopilot.ca/
 
 | Component | Release | Source | Package |
 |---|---|---|---|
-| [vinoWhisper](https://github.com/karanshukla/vinoWhisper) | yes | yes | [PyPI](https://pypi.org/project/vinowhisper/) |
+| [vinoWhisper](https://github.com/karanshukla/vinoWhisper) | yes, or its Flatpak | yes | [PyPI](https://pypi.org/project/vinowhisper/) |
 | [vinoAuthFace](https://github.com/karanshukla/vinoAuthFace) | yes (asks for your password) | yes | |
 | [vinoOpenEffects](https://github.com/karanshukla/vinoOpenEffects) | yes | yes | |
 | [vinoPop](https://github.com/karanshukla/vinoPop) | yes | yes | |
@@ -72,7 +72,7 @@ vinopilot uninstall pop
 vinopilot steps search install    # print the shell an action would run, without running it
 ```
 
-App names work with or without the `vino`. `--via` takes `release` (the default), `source`, `pypi` or `crates`, and `flatpak` for vinoSearch. Exit codes: 0 done, 1 failed, 2 bad usage.
+App names work with or without the `vino`. `--via` takes `release` (the default), `source`, `pypi` or `crates`, and `flatpak` for vinoWhisper and vinoSearch. Exit codes: 0 done, 1 failed, 2 bad usage.
 
 `--json` turns it into an API: `list` and `check` print one document, and actions print one event per line. A frontend in another language should drive that instead of reimplementing the catalog. [docs/json-api.md](docs/json-api.md) has the shape.
 

@@ -231,11 +231,15 @@ fetch() {
     curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
     [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
     [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
-    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/SHA256SUMS" "$RELEASE/SHA256SUMS" 2>/dev/null \
-        || curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/SHA256SUMS" "$RELEASE/$1.sha256" \
-        || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
-    (cd "$tmp" && awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' SHA256SUMS > want \
-        && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
         || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
     echo "checksum verified"
     # The package manager may read it as another user.

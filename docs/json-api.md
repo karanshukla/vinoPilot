@@ -37,7 +37,7 @@
 | Field | Meaning |
 |---|---|
 | `id` | what the command line takes: `vinowhisper`, `ovfetch`, `vinouserinterface`, `vinopilot` |
-| `channels` | the ways it can be installed, best first: `release`, `source`, `package` (PyPI or crates.io), `flatpak` (the release's Flatpak bundle: vinosearch) |
+| `channels` | the ways it can be installed, best first: `release`, `source`, `package` (PyPI or crates.io), `flatpak` (the release's Flatpak bundle: vinowhisper and vinosearch) |
 | `registry` | `"pypi"` or `"crates.io"` when `channels` has `package`, else `null` |
 | `needs_root` | its actions run through `pkexec` |
 | `installed` | `null`, or how it's installed and its version (`null` when the binary wouldn't say, `"dev"` for a checkout build). `channel` is one of `channels`, or for vinopilot itself also `deb`, `rpm` or `flatpak`: its release's package, which `update` and `uninstall` go through but `install` doesn't offer. A Flatpak's version is its metainfo's newest release, `null` without one |

@@ -106,6 +106,7 @@ impl Id {
     pub fn flatpak(self) -> Option<&'static str> {
         match self {
             Id::App(App::Pilot) => Some(PILOT_APP_ID),
+            Id::App(App::Whisper) => Some("io.github.karanshukla.vinowhisper"),
             Id::App(App::Search) => Some("dev.vinosearch.VinoSearch"),
             _ => None,
         }
