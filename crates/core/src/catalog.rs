@@ -844,6 +844,53 @@ mod tests {
 
     const ACTIONS: [Action; 3] = [Action::Install, Action::Update, Action::Uninstall];
 
+    const EVERY_CHANNEL: [Channel; 6] = [
+        Channel::Release,
+        Channel::Source,
+        Channel::Package,
+        Channel::Deb,
+        Channel::Rpm,
+        Channel::Flatpak,
+    ];
+
+    /// Every step of every (component, channel, action), the prelude once.
+    fn rendered_steps() -> String {
+        let mut out = format!("<PRELUDE>\n{PRELUDE}\n</PRELUDE>\n");
+        for id in Id::ALL {
+            for channel in EVERY_CHANNEL {
+                for action in ACTIONS {
+                    out.push_str(&format!("### {} {channel:?} {action:?}\n", id.slug()));
+                    for step in steps(id, channel, action) {
+                        let body = step
+                            .script
+                            .strip_prefix(PRELUDE)
+                            .expect("every step starts with the prelude");
+                        let who = if step.root { "root" } else { "user" };
+                        out.push_str(&format!("--- {who}{body}\n"));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The scripts are a contract with each app's installer. A change here
+    /// is deliberate: read the diff, then bless it with
+    /// `VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core`.
+    #[test]
+    fn every_script_matches_the_snapshot() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/catalog/steps.snapshot");
+        let rendered = rendered_steps();
+        if std::env::var_os("VINOPILOT_BLESS_STEPS").is_some() {
+            std::fs::write(path, &rendered).unwrap();
+        }
+        let pinned = std::fs::read_to_string(path).unwrap_or_default();
+        assert!(
+            rendered == pinned,
+            "the steps differ from {path}: rerun with VINOPILOT_BLESS_STEPS=1 and read the diff"
+        );
+    }
+
     #[test]
     fn every_offered_channel_can_install_update_and_uninstall() {
         for id in Id::ALL {
