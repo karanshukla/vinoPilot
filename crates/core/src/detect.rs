@@ -150,10 +150,8 @@ pub fn version_in(text: &str) -> Option<String> {
     let line = text.lines().next()?;
     line.split_whitespace().skip(1).find_map(|word| {
         let word = word.strip_prefix('v').unwrap_or(word);
-        let numeric = word.starts_with(|c: char| c.is_ascii_digit())
-            && word
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+');
+        let numeric =
+            word.starts_with(|c: char| c.is_ascii_digit()) && crate::version::is_plain(word);
         (numeric || word == "dev").then(|| word.to_string())
     })
 }
@@ -378,11 +376,7 @@ pub fn metainfo_version(text: &str) -> Option<String> {
     let value = tag.split("version=").nth(1)?;
     let quote = value.chars().next().filter(|c| *c == '"' || *c == '\'')?;
     let version = value[1..].split(quote).next()?;
-    let plain = !version.is_empty()
-        && version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+');
-    plain.then(|| version.to_string())
+    crate::version::is_plain(version).then(|| version.to_string())
 }
 
 /// `id` installed as its release's Flatpak. vinoPilot's holds the real

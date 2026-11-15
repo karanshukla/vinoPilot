@@ -77,14 +77,13 @@ pub fn release(repo: &str) -> Result<String, String> {
     vino_ui::update::latest_tag(&json).ok_or_else(|| "no release yet".to_string())
 }
 
+/// The longest version a registry may answer with and still be shown.
+const MAX_VERSION_LEN: usize = 32;
+
 /// A version string from a registry, held to the same characters as a tag:
 /// it's shown in the window.
 fn plain(version: &str) -> Option<String> {
-    let ok = !version.is_empty()
-        && version.len() <= 32
-        && version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+');
+    let ok = version.len() <= MAX_VERSION_LEN && crate::version::is_plain(version);
     ok.then(|| version.to_string())
 }
 
@@ -205,5 +204,11 @@ mod tests {
         );
         assert_eq!(pypi_version(r#"{"info":{"version":"<b>1</b>"}}"#), None);
         assert_eq!(crates_version("not json"), None);
+    }
+
+    #[test]
+    fn a_registry_version_of_32_characters_is_shown_and_33_is_not() {
+        assert!(plain(&"1".repeat(MAX_VERSION_LEN)).is_some());
+        assert!(plain(&"1".repeat(MAX_VERSION_LEN + 1)).is_none());
     }
 }
