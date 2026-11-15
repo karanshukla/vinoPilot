@@ -301,6 +301,29 @@ mod tests {
         assert_eq!(clean("plain"), "plain");
     }
 
+    #[test]
+    fn colour_and_cursor_sequences_go_and_their_text_stays() {
+        assert_eq!(clean("\x1b[31merror\x1b[0m: no cargo"), "error: no cargo");
+        assert_eq!(clean("\x1b[38;5;208mwarn\x1b[m"), "warn");
+        assert_eq!(clean("\x1b[2K\x1b[1Gdone"), "done");
+    }
+
+    #[test]
+    fn a_progress_line_is_its_last_redraw_that_says_anything() {
+        assert_eq!(clean("  0%\r 50%\r100%\r"), "100%");
+        assert_eq!(clean("\r\r"), "");
+        assert_eq!(clean("Compiling\r\x1b[32mFinished\x1b[0m"), "Finished");
+    }
+
+    /// Only `ESC [` sequences are understood. Any other escape loses the
+    /// ESC and the character after it, so a terminal title's text and its
+    /// BEL stay in the line.
+    #[test]
+    fn an_osc_title_loses_its_introducer_and_keeps_its_text() {
+        assert_eq!(clean("\x1b]0;building\x07ready"), "0;building\x07ready");
+        assert_eq!(clean("\x1b(Bplain"), "Bplain");
+    }
+
     fn env() -> Env {
         Env {
             checkout: "/src/app".into(),
