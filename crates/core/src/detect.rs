@@ -92,39 +92,61 @@ impl Paths {
 }
 
 /// The installs `cargo install` keeps in `~/.cargo/.crates.toml`: crate name
-/// to where it came from.
+/// to where it came from. Its `[v1]` keys read
+/// `"ovfetch 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)"`.
 pub fn parse_crates_toml(text: &str) -> HashMap<String, (String, Channel)> {
-    let mut out = HashMap::new();
-    for line in text.lines() {
-        // "ovfetch 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = ["ovfetch"]
-        let Some(key) = line.strip_prefix('"').and_then(|l| l.split('"').next()) else {
-            continue;
-        };
-        let mut parts = key.splitn(3, ' ');
-        let (Some(name), Some(version), Some(source)) = (parts.next(), parts.next(), parts.next())
-        else {
-            continue;
-        };
-        let channel = if source.starts_with("(registry+") || source.starts_with("(sparse+") {
-            Channel::Package
-        } else {
-            Channel::Source
-        };
-        out.insert(name.to_string(), (version.to_string(), channel));
-    }
-    out
+    let Ok(records) = text.parse::<toml::Table>() else {
+        return HashMap::new();
+    };
+    let Some(installs) = records.get("v1").and_then(toml::Value::as_table) else {
+        return HashMap::new();
+    };
+    installs
+        .keys()
+        .filter_map(|key| crate_install(key))
+        .collect()
+}
+
+/// One `.crates.toml` key, `name version (source)`.
+fn crate_install(key: &str) -> Option<(String, (String, Channel))> {
+    let mut parts = key.splitn(3, ' ');
+    let (name, version, source) = (parts.next()?, parts.next()?, parts.next()?);
+    let channel = if source.starts_with("(registry+") || source.starts_with("(sparse+") {
+        Channel::Package
+    } else {
+        Channel::Source
+    };
+    Some((name.to_string(), (version.to_string(), channel)))
 }
 
 /// How a `uv tool` was installed, from its `uv-receipt.toml`: by name from
 /// PyPI, a release's wheel, or a local directory.
 pub fn parse_uv_receipt(text: &str) -> Channel {
-    let requirements = text
-        .lines()
-        .find(|l| l.trim_start().starts_with("requirements"))
-        .unwrap_or("");
-    if requirements.contains(".whl") {
+    let Ok(receipt) = text.parse::<toml::Table>() else {
+        return Channel::Package;
+    };
+    let requirements = receipt
+        .get("tool")
+        .and_then(|tool| tool.get("requirements"))
+        .or_else(|| receipt.get("requirements"))
+        .and_then(toml::Value::as_array);
+    let requirements: Vec<&toml::Table> = requirements
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_table)
+        .collect();
+    let from_a_wheel = |requirement: &&toml::Table| {
+        requirement
+            .values()
+            .filter_map(toml::Value::as_str)
+            .any(|value| value.contains(".whl"))
+    };
+    let from_a_folder = |requirement: &&toml::Table| {
+        requirement.contains_key("directory") || requirement.contains_key("editable")
+    };
+    if requirements.iter().any(from_a_wheel) {
         Channel::Release
-    } else if requirements.contains("directory") || requirements.contains("editable") {
+    } else if requirements.iter().any(from_a_folder) {
         Channel::Source
     } else {
         Channel::Package
@@ -158,16 +180,9 @@ pub fn version_in(text: &str) -> Option<String> {
 
 /// The `version = "..."` of a Cargo.toml's `[package]`.
 pub fn cargo_toml_version(text: &str) -> Option<String> {
-    let package = text.split("[package]").nth(1)?;
-    let section = package.split("\n[").next()?;
-    section.lines().find_map(|l| {
-        let rest = l
-            .trim()
-            .strip_prefix("version")?
-            .trim_start()
-            .strip_prefix('=')?;
-        Some(rest.trim().trim_matches('"').to_string())
-    })
+    let manifest = text.parse::<toml::Table>().ok()?;
+    let version = manifest.get("package")?.get("version")?.as_str()?;
+    Some(version.to_string())
 }
 
 /// Runs `program --version` for at most two seconds: a binary that opens a
@@ -863,6 +878,62 @@ mod tests {
         assert_eq!(parse_uv_receipt(pypi), Channel::Package);
         assert_eq!(parse_uv_receipt(wheel), Channel::Release);
         assert_eq!(parse_uv_receipt(dir), Channel::Source);
+    }
+
+    #[test]
+    fn a_crates_toml_with_no_installs_or_that_is_not_toml_has_none() {
+        assert!(parse_crates_toml("").is_empty());
+        assert!(parse_crates_toml("[v1]\n").is_empty());
+        assert!(parse_crates_toml("[v2]\n\"ovfetch 0.6.0 (registry+x)\" = []\n").is_empty());
+        assert!(parse_crates_toml("[v1\n\"ovfetch 0.6.0 (registry+x)\" = [\n").is_empty());
+        // A key that isn't `name version (source)` is skipped, not guessed at.
+        assert!(parse_crates_toml("[v1]\n\"ovfetch\" = []\n").is_empty());
+    }
+
+    #[test]
+    fn a_sparse_registry_is_crates_io_too() {
+        let text = "[v1]\n\"ovfetch 0.6.0 (sparse+https://index.crates.io/)\" = [\"ovfetch\"]\n";
+        assert_eq!(
+            parse_crates_toml(text)["ovfetch"],
+            ("0.6.0".into(), Channel::Package)
+        );
+    }
+
+    #[test]
+    fn a_uv_receipt_is_read_under_its_tool_table_as_uv_writes_it() {
+        let receipt = |requirement: &str| {
+            format!("[tool]\nrequirements = [{requirement}]\nentrypoints = []\n")
+        };
+        let wheel = receipt(
+            r#"{ name = "vinowhisper", path = "/tmp/x/vinowhisper-1.3.1-py3-none-any.whl" }"#,
+        );
+        let editable = receipt(r#"{ name = "vinospeak", editable = "/home/k/vinoSpeak" }"#);
+        let pypi = receipt(r#"{ name = "vinospeak" }"#);
+        assert_eq!(parse_uv_receipt(&wheel), Channel::Release);
+        assert_eq!(parse_uv_receipt(&editable), Channel::Source);
+        assert_eq!(parse_uv_receipt(&pypi), Channel::Package);
+    }
+
+    #[test]
+    fn a_uv_receipt_without_requirements_or_that_is_not_toml_reads_as_pypi() {
+        assert_eq!(parse_uv_receipt(""), Channel::Package);
+        assert_eq!(
+            parse_uv_receipt("[tool]\nentrypoints = []\n"),
+            Channel::Package
+        );
+        assert_eq!(
+            parse_uv_receipt("requirements = [{ name ="),
+            Channel::Package
+        );
+    }
+
+    #[test]
+    fn a_cargo_toml_without_its_own_version_or_that_is_not_toml_has_none() {
+        let inherited = "[package]\nname = \"x\"\nversion.workspace = true\n";
+        assert_eq!(cargo_toml_version(inherited), None);
+        let workspace = "[workspace.package]\nversion = \"0.5.0\"\n";
+        assert_eq!(cargo_toml_version(workspace), None);
+        assert_eq!(cargo_toml_version("[package\nversion = \"1\""), None);
     }
 
     #[test]
