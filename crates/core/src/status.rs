@@ -41,6 +41,10 @@ pub struct Component {
     pub update: Update,
 }
 
+/// Judged against the source that matches how it's installed: a package or a
+/// Flatpak is a file of the release (pinned by
+/// `tests::vinopilots_packages_and_flatpaks_compare_with_the_release`,
+/// `tests::packages_compare_with_the_registry_not_the_release`).
 pub fn update(installed: Option<&Installed>, latest: Option<&Latest>) -> Update {
     let (Some(installed), Some(latest)) = (installed, latest) else {
         return Update::Unknown { reason: None };
@@ -63,7 +67,6 @@ pub fn update(installed: Option<&Installed>, latest: Option<&Latest>) -> Update 
         None => Update::Unknown { reason: None },
     };
     match installed.channel {
-        // A package or a Flatpak is a file of the release.
         Channel::Release | Channel::Deb | Channel::Rpm | Channel::Flatpak => newer(&latest.release),
         Channel::Package => newer(&latest.package),
         Channel::Source => match &latest.behind {
@@ -141,6 +144,24 @@ mod tests {
             update(Some(&at(Channel::Package, "1.3.1")), Some(&latest)),
             Update::UpToDate
         );
+    }
+
+    #[test]
+    fn vinopilots_packages_and_flatpaks_compare_with_the_release() {
+        let latest = Latest {
+            release: Some(Ok("v2.0.0".into())),
+            package: Some(Ok("1.0.0".into())),
+            behind: None,
+        };
+        for channel in [Channel::Deb, Channel::Rpm, Channel::Flatpak] {
+            assert_eq!(
+                update(Some(&at(channel, "1.0.0")), Some(&latest)),
+                Update::Available {
+                    to: "v2.0.0".into()
+                },
+                "{channel:?}"
+            );
+        }
     }
 
     #[test]

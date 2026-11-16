@@ -1,5 +1,6 @@
 use super::scripts::PRELUDE;
 use super::*;
+use crate::test_support::Scratch;
 
 const ACTIONS: [Action; 3] = [Action::Install, Action::Update, Action::Uninstall];
 
@@ -193,7 +194,6 @@ fn vinopilots_packages_update_from_the_release_checked_and_ask_for_root_themselv
         for action in ACTIONS {
             let steps = steps(Id::App(App::Pilot), channel, action);
             assert!(!steps.is_empty(), "{channel:?} {action:?}");
-            // Only the package manager runs as root, not the whole step.
             assert!(steps.iter().all(|s| !s.root), "{channel:?} {action:?}");
         }
         let update = &steps(Id::App(App::Pilot), channel, Action::Update)[0].script;
@@ -203,36 +203,54 @@ fn vinopilots_packages_update_from_the_release_checked_and_ask_for_root_themselv
             "{channel:?}"
         );
         assert!(update.contains("sha256sum -c"), "{channel:?}");
-        // No other component has them.
-        assert!(steps(Id::Ovfetch, channel, Action::Update).is_empty());
     }
 }
 
 #[test]
-fn vinowhisper_and_vinosearch_also_install_from_their_flatpak() {
+fn no_other_component_updates_through_a_deb_or_rpm() {
+    for id in Id::ALL.into_iter().filter(|&id| id != Id::App(App::Pilot)) {
+        for channel in [Channel::Deb, Channel::Rpm] {
+            assert!(
+                steps(id, channel, Action::Update).is_empty(),
+                "{}",
+                id.name()
+            );
+        }
+    }
+}
+
+const FLATPAK_APPS: [(Id, &str); 2] = [
+    (Id::App(App::Whisper), "io.github.karanshukla.vinowhisper"),
+    (Id::App(App::Search), "dev.vinosearch.VinoSearch"),
+];
+
+#[test]
+fn only_vinowhisper_and_vinosearch_offer_their_flatpak() {
     for id in Id::ALL {
         let offered = id.channels().contains(&Channel::Flatpak);
-        let has = matches!(id, Id::App(App::Whisper | App::Search));
+        let has = FLATPAK_APPS.iter().any(|(app, _)| *app == id);
         assert_eq!(offered, has, "{}", id.name());
-        // The default way in stays the first.
-        assert_ne!(id.channels()[0], Channel::Flatpak);
-        if !has {
-            continue;
-        }
-        let app_id = id.flatpak().unwrap();
-        let named = if id == Id::App(App::Search) {
-            "dev.vinosearch.VinoSearch"
-        } else {
-            "io.github.karanshukla.vinowhisper"
-        };
-        assert_eq!(app_id, named);
+    }
+    for (id, app_id) in FLATPAK_APPS {
+        assert_eq!(id.flatpak(), Some(app_id));
+    }
+}
+
+#[test]
+fn a_flatpak_is_never_the_default_way_in() {
+    for id in Id::ALL {
+        assert_ne!(id.channels()[0], Channel::Flatpak, "{}", id.name());
+    }
+}
+
+#[test]
+fn a_flatpak_installs_and_uninstalls_its_app_id_in_one_step() {
+    for (id, app_id) in FLATPAK_APPS {
         for action in ACTIONS {
             let steps = steps(id, Channel::Flatpak, action);
             assert_eq!(steps.len(), 1, "{} {action:?}", id.name());
             let script = &steps[0].script;
             assert!(script.contains(&format!("APP_ID={app_id}\n")));
-            // Never the home's uninstaller: that isn't how it got here.
-            assert!(!script.contains("-upgrade"), "{} {action:?}", id.name());
             assert_eq!(
                 script.contains("flatpak uninstall"),
                 action == Action::Uninstall
@@ -243,60 +261,72 @@ fn vinowhisper_and_vinosearch_also_install_from_their_flatpak() {
     }
 }
 
+#[test]
+fn a_flatpak_never_runs_the_homes_upgrade_script() {
+    for (id, _) in FLATPAK_APPS {
+        for action in ACTIONS {
+            let script = &steps(id, Channel::Flatpak, action)[0].script;
+            assert!(!script.contains("-upgrade"), "{} {action:?}", id.name());
+        }
+    }
+}
+
+/// The stubbed `flatpak info`: installed nowhere yet.
+const INFO_FINDS_NOTHING: &str = "exit 1";
+/// The stubbed `flatpak info`: installed system-wide only.
+const INFO_FINDS_SYSTEM: &str = "[ \"$2\" = --system ]; exit";
+
 /// Runs `id`'s Flatpak install against a `file://` release holding the
 /// bundle's checksum in the file `sums_name`, and a `SHA256SUMS` that
 /// lists only other files when that isn't it. `flatpak` is stubbed to
 /// write its arguments down. What it was run with, or the step's stderr.
-fn install_flatpak(id: Id, sums_name: &str, good: bool, system: bool) -> Result<String, String> {
-    use std::fs;
+fn install_flatpak(id: Id, sums_name: &str, good: bool, info: &str) -> Result<String, String> {
     let asset = format!("{}-x86_64.flatpak", id.slug());
-    let root = std::env::temp_dir().join(format!(
-        "vinopilot-flatpak-step-{}-{sums_name}-{good}-{system}-{}",
+    let root = Scratch::new(&format!(
+        "flatpak-step-{}-{sums_name}-{good}-{}",
         id.slug(),
-        std::process::id()
+        info.len()
     ));
-    let _ = fs::remove_dir_all(&root);
-    let (release, stubs, home) = (root.join("release"), root.join("stubs"), root.join("home"));
-    for dir in [&release, &stubs, &home] {
-        fs::create_dir_all(dir).unwrap();
-    }
-    fs::write(release.join(&asset), "a bundle").unwrap();
+    let bundle = root.write(&format!("release/{asset}"), "a bundle");
     let sum = std::process::Command::new("sha256sum")
-        .arg(release.join(&asset))
+        .arg(&bundle)
         .output()
         .unwrap();
     let hash = String::from_utf8_lossy(&sum.stdout)[..64].to_string();
     let hash = if good { hash } else { "0".repeat(64) };
-    fs::write(
-        release.join("SHA256SUMS"),
+    root.write(
+        "release/SHA256SUMS",
         format!("{}  install.sh\n", "1".repeat(64)),
-    )
-    .unwrap();
-    fs::write(release.join(sums_name), format!("{hash}  {asset}\n")).unwrap();
-    // `info` fails, installed nowhere yet, unless it's `system`-wide.
-    let info = if system {
-        "[ \"$2\" = --system ]; exit"
-    } else {
-        "exit 1"
-    };
-    let flatpak =
-        format!("#!/bin/sh\n[ \"$1\" != info ] || {{ {info}; }}\necho \"$@\" >> \"$HOME/ran\"\n");
-    let pkexec = "#!/bin/sh\nprintf 'pkexec ' >> \"$HOME/ran\"\nexec \"$@\"\n";
-    for (name, script) in [("flatpak", flatpak.as_str()), ("pkexec", pkexec)] {
-        fs::write(stubs.join(name), script).unwrap();
-        make_executable(&stubs.join(name));
-    }
+    );
+    root.write(
+        &format!("release/{sums_name}"),
+        format!("{hash}  {asset}\n"),
+    );
+    root.script(
+        "stubs/flatpak",
+        &format!("[ \"$1\" != info ] || {{ {info}; }}\necho \"$@\" >> \"$HOME/ran\"\n"),
+    );
+    root.script(
+        "stubs/pkexec",
+        "printf 'pkexec ' >> \"$HOME/ran\"\nexec \"$@\"\n",
+    );
+    let home = root.mkdir("home");
     let step = &steps(id, Channel::Flatpak, Action::Install)[0];
     let out = std::process::Command::new("bash")
         .args(["-c", &step.script])
         .env_clear()
         .env("HOME", &home)
-        .env("RELEASE", format!("file://{}", release.display()))
-        .env("PATH", format!("{}:/usr/bin:/bin", stubs.display()))
+        .env(
+            "RELEASE",
+            format!("file://{}", root.join("release").display()),
+        )
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", root.join("stubs").display()),
+        )
         .output()
         .unwrap();
-    let ran = fs::read_to_string(home.join("ran")).unwrap_or_default();
-    fs::remove_dir_all(root).unwrap();
+    let ran = std::fs::read_to_string(home.join("ran")).unwrap_or_default();
     if out.status.success() {
         Ok(ran)
     } else {
@@ -305,39 +335,46 @@ fn install_flatpak(id: Id, sums_name: &str, good: bool, system: bool) -> Result<
     }
 }
 
+/// The bundle is checked against `sums`, then installed for the user; a
+/// wrong checksum installs nothing.
+fn assert_checked_then_installed(id: Id, sums: &str) {
+    let ran = install_flatpak(id, sums, true, INFO_FINDS_NOTHING).unwrap();
+    let asset = format!("{}-x86_64.flatpak", id.slug());
+    assert!(ran.starts_with("install --user -y "), "{ran}");
+    assert!(ran.trim_end().ends_with(&asset), "{ran}");
+    let why = install_flatpak(id, sums, false, INFO_FINDS_NOTHING).unwrap_err();
+    assert!(why.contains("doesn't match its checksum"), "{why}");
+}
+
 #[test]
-fn a_flatpak_is_checked_then_installed_for_the_user() {
-    if !have(&["bash", "curl", "sha256sum"]) {
-        return;
-    }
-    // Either checksum file: vinoPilot's SHA256SUMS lists its bundle;
-    // vinoWhisper's is written before the bundle is built, so the
-    // bundle's is in its own .sha256 beside it.
-    for (id, sums) in [
-        (Id::App(App::Search), "SHA256SUMS"),
-        (Id::App(App::Search), "vinosearch-x86_64.flatpak.sha256"),
-        (Id::App(App::Whisper), "vinowhisper-x86_64.flatpak.sha256"),
-    ] {
-        let ran = install_flatpak(id, sums, true, false).unwrap();
-        let asset = format!("{}-x86_64.flatpak", id.slug());
-        assert!(ran.starts_with("install --user -y "), "{ran}");
-        assert!(ran.trim_end().ends_with(&asset), "{ran}");
-        let why = install_flatpak(id, sums, false, false).unwrap_err();
-        assert!(why.contains("doesn't match its checksum"), "{why}");
+fn a_flatpak_listed_in_sha256sums_is_checked_then_installed() {
+    if have(&["bash", "curl", "sha256sum"]) {
+        assert_checked_then_installed(Id::App(App::Search), "SHA256SUMS");
     }
 }
 
 #[test]
+fn a_flatpak_with_its_own_sha256_file_is_checked_then_installed() {
+    if have(&["bash", "curl", "sha256sum"]) {
+        let search = Id::App(App::Search);
+        assert_checked_then_installed(search, "vinosearch-x86_64.flatpak.sha256");
+        let whisper = Id::App(App::Whisper);
+        assert_checked_then_installed(whisper, "vinowhisper-x86_64.flatpak.sha256");
+    }
+}
+
+fn running_as_root() -> bool {
+    let id = std::process::Command::new("id").arg("-u").output().unwrap();
+    String::from_utf8_lossy(&id.stdout).trim() == "0"
+}
+
+#[test]
 fn a_system_wide_flatpak_updates_through_pkexec() {
-    if !have(&["bash", "curl", "sha256sum"]) {
+    if !have(&["bash", "curl", "sha256sum"]) || running_as_root() {
         return;
     }
-    // As root, as_root runs it as it is: nothing to check.
-    let root = std::process::Command::new("id").arg("-u").output().unwrap();
-    if String::from_utf8_lossy(&root.stdout).trim() == "0" {
-        return;
-    }
-    let ran = install_flatpak(Id::App(App::Pilot), "SHA256SUMS", true, true).unwrap();
+    let pilot = Id::App(App::Pilot);
+    let ran = install_flatpak(pilot, "SHA256SUMS", true, INFO_FINDS_SYSTEM).unwrap();
     assert!(ran.starts_with("pkexec install --system -y "), "{ran}");
 }
 
@@ -410,42 +447,34 @@ fn the_uninstall_note_names_the_models_only_for_apps_that_have_them() {
 
 /// Runs vinoWhisper's uninstall step in a home of its own, with
 /// `systemctl` and `uv` stubbed out so nothing reaches the real session.
-fn uninstall_whisper(name: &str, setup: impl FnOnce(&std::path::Path)) -> std::path::PathBuf {
-    use std::fs;
-    let root =
-        std::env::temp_dir().join(format!("vinopilot-whisper-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&root);
-    let home = root.join("home");
-    let stubs = root.join("stubs");
-    fs::create_dir_all(&stubs).unwrap();
+fn uninstall_whisper(name: &str, setup: impl FnOnce(&Scratch)) -> Scratch {
+    let root = Scratch::new(&format!("whisper-{name}"));
     for stub in ["systemctl", "uv"] {
-        let path = stubs.join(stub);
-        fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-        make_executable(&path);
+        root.script(&format!("stubs/{stub}"), "exit 0\n");
     }
-    let data = root.join("data/vinowhisper");
-    let cache = root.join("cache/vinowhisper");
     for dir in [
-        data.join("models/whisper-small.en"),
-        data.join("transcripts"),
-        data.join("sessions"),
-        cache.join("export-tmp"),
-        home.join(".config/vinowhisper"),
-        home.join(".local/bin"),
+        "data/vinowhisper/transcripts",
+        "data/vinowhisper/sessions",
+        "cache/vinowhisper/export-tmp",
+        "home/.config/vinowhisper",
+        "home/.local/bin",
     ] {
-        fs::create_dir_all(dir).unwrap();
+        root.mkdir(dir);
     }
-    fs::write(data.join("models/whisper-small.en/model.xml"), "x").unwrap();
-    fs::write(data.join("transcripts/2026-11-11-120000.txt"), "x").unwrap();
-    setup(&home);
+    root.write("data/vinowhisper/models/whisper-small.en/model.xml", "x");
+    root.write("data/vinowhisper/transcripts/2026-11-11-120000.txt", "x");
+    setup(&root);
     let step = &steps(Id::App(App::Whisper), Channel::Release, Action::Uninstall)[0];
     let out = std::process::Command::new("bash")
         .args(["-c", &step.script])
         .env_clear()
-        .env("HOME", &home)
+        .env("HOME", root.join("home"))
         .env("XDG_DATA_HOME", root.join("data"))
         .env("XDG_CACHE_HOME", root.join("cache"))
-        .env("PATH", format!("{}:/usr/bin:/bin", stubs.display()))
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", root.join("stubs").display()),
+        )
         .output()
         .unwrap();
     assert!(
@@ -456,10 +485,7 @@ fn uninstall_whisper(name: &str, setup: impl FnOnce(&std::path::Path)) -> std::p
     root
 }
 
-fn make_executable(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-}
+const WHISPER_UPGRADE: &str = "home/.local/bin/vinowhisper-upgrade";
 
 #[test]
 fn uninstalling_vinowhisper_deletes_its_models_and_keeps_transcripts_and_settings() {
@@ -475,7 +501,6 @@ fn uninstalling_vinowhisper_deletes_its_models_and_keeps_transcripts_and_setting
     );
     assert!(root.join("data/vinowhisper/sessions").exists());
     assert!(root.join("home/.config/vinowhisper").exists());
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -483,32 +508,28 @@ fn vinowhispers_own_uninstaller_runs_when_it_has_one() {
     if !have(&["bash"]) {
         return;
     }
-    // An upgrade script that knows --uninstall is run with it, and the
-    // inline steps aren't.
-    let root = uninstall_whisper("own", |home| {
-        let upgrade = home.join(".local/bin/vinowhisper-upgrade");
-        std::fs::write(
-            &upgrade,
-            "#!/bin/sh\n# --uninstall: remove it\necho \"$@\" > \"$HOME/ran\"\n",
-        )
-        .unwrap();
-        make_executable(&upgrade);
+    let root = uninstall_whisper("own", |root| {
+        root.script(
+            WHISPER_UPGRADE,
+            "# --uninstall: remove it\necho \"$@\" > \"$HOME/ran\"\n",
+        );
     });
     let ran = std::fs::read_to_string(root.join("home/ran")).unwrap();
     assert_eq!(ran.trim(), "--uninstall");
     assert!(root.join("data/vinowhisper/models").exists());
-    std::fs::remove_dir_all(&root).unwrap();
+}
 
-    // An older one that doesn't is left alone, and the inline steps run.
-    let root = uninstall_whisper("old", |home| {
-        let upgrade = home.join(".local/bin/vinowhisper-upgrade");
-        std::fs::write(&upgrade, "#!/bin/sh\necho \"$@\" > \"$HOME/ran\"\n").unwrap();
-        make_executable(&upgrade);
+#[test]
+fn an_upgrade_script_without_uninstall_is_removed_not_run() {
+    if !have(&["bash"]) {
+        return;
+    }
+    let root = uninstall_whisper("old", |root| {
+        root.script(WHISPER_UPGRADE, "echo \"$@\" > \"$HOME/ran\"\n");
     });
     assert!(!root.join("home/ran").exists());
-    assert!(!root.join("home/.local/bin/vinowhisper-upgrade").exists());
+    assert!(!root.join(WHISPER_UPGRADE).exists());
     assert!(!root.join("data/vinowhisper/models").exists());
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -546,25 +567,36 @@ fn installs_that_run_from_the_checkout_switch_it() {
     assert_eq!(switch, [Id::App(App::Whisper), Id::App(App::Pop), Id::Ui]);
 }
 
-/// The prelude's checkout on a real repo: a checkout on a feature branch
-/// is left alone, the default branch is built in the worktree, and
-/// checkout_done records it and removes the worktree unless kept.
-#[test]
-fn a_checkout_off_the_default_branch_installs_from_a_worktree() {
-    if !have(&["git"]) {
-        return;
+/// The prelude's checkout on a real repo: `origin`, with a `checkout` of it
+/// on `feature` holding uncommitted work, and a commit on main it hasn't
+/// pulled.
+struct Repos(Scratch);
+
+impl Repos {
+    fn new(name: &str) -> Self {
+        let repos = Repos(Scratch::new(&format!("worktree-{name}")));
+        repos.run(
+            r#"git init -q -b main origin && git -C origin commit -q --allow-empty -m one
+checkout
+git -C "$CHECKOUT" switch -q -c feature && echo work > "$CHECKOUT/wip"
+git -C origin commit -q --allow-empty -m two"#,
+        );
+        repos
     }
-    let tmp = std::env::temp_dir().join(format!("vinopilot-worktree-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp).unwrap();
-    let run_as = |off_branch: OffBranch, script: &str| {
+
+    /// Runs `script` after the prelude, with `OffBranch::Worktree`.
+    fn run(&self, script: &str) -> String {
+        self.run_as(OffBranch::Worktree, script)
+    }
+
+    fn run_as(&self, off_branch: OffBranch, script: &str) -> String {
         let out = std::process::Command::new("bash")
             .args(["-c", &format!("{PRELUDE}\n{script}")])
-            .current_dir(&tmp)
-            .env("CHECKOUT", tmp.join("checkout"))
-            .env("WORKTREE", tmp.join("share/worktrees/checkout"))
+            .current_dir(&*self.0)
+            .env("CHECKOUT", self.0.join("checkout"))
+            .env("WORKTREE", self.worktree())
             .env("OFF_BRANCH", off_branch.name())
-            .env("REPO_URL", tmp.join("origin"))
+            .env("REPO_URL", self.0.join("origin"))
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_AUTHOR_NAME", "t")
             .env("GIT_AUTHOR_EMAIL", "t@t")
@@ -579,42 +611,59 @@ fn a_checkout_off_the_default_branch_installs_from_a_worktree() {
             String::from_utf8_lossy(&out.stderr)
         );
         stdout
-    };
-    let run = |script: &str| run_as(OffBranch::Worktree, script);
-    run(
-        r#"git init -q -b main origin && git -C origin commit -q --allow-empty -m one
-checkout
-git -C "$CHECKOUT" switch -q -c feature && echo work > "$CHECKOUT/wip"
-git -C origin commit -q --allow-empty -m two"#,
-    );
+    }
 
-    let out =
-        run(r#"checkout; echo "building in $CHECKOUT"; git -C "$CHECKOUT" log -1 --format=%s"#);
+    fn worktree(&self) -> std::path::PathBuf {
+        self.0.join("share/worktrees/checkout")
+    }
+}
+
+#[test]
+fn a_checkout_off_the_default_branch_installs_from_a_worktree() {
+    if !have(&["git"]) {
+        return;
+    }
+    let repos = Repos::new("off");
+    let out = repos
+        .run(r#"checkout; echo "building in $CHECKOUT"; git -C "$CHECKOUT" log -1 --format=%s"#);
     assert!(out.contains("is on feature, not main"), "{out}");
     assert!(out.contains("share/worktrees/checkout\n"), "{out}");
     assert!(out.ends_with("two\n"), "{out}");
     assert_eq!(
-        run(r#"source_dir; git -C "$CHECKOUT" branch --show-current; cat "$CHECKOUT/wip""#),
-        format!(
-            "{}\nfeature\nwork\n",
-            tmp.join("share/worktrees/checkout").display()
-        )
+        repos.run(r#"source_dir; git -C "$CHECKOUT" branch --show-current; cat "$CHECKOUT/wip""#),
+        format!("{}\nfeature\nwork\n", repos.worktree().display())
     );
-    run("checkout_done");
-    assert!(!tmp.join("share/worktrees/checkout").exists());
+}
+
+#[test]
+fn checkout_done_records_the_worktrees_commit_and_removes_it() {
+    if !have(&["git"]) {
+        return;
+    }
+    let repos = Repos::new("done");
+    repos.run("checkout");
+    repos.run("checkout_done");
+    assert!(!repos.worktree().exists());
     assert_eq!(
-        run(r#"git -C "$CHECKOUT" log -1 --format=%s refs/vinopilot/installed"#),
+        repos.run(r#"git -C "$CHECKOUT" log -1 --format=%s refs/vinopilot/installed"#),
         "two\n"
     );
+}
 
-    // Switch: the checkout itself goes to main, its work stashed, and
-    // the record goes.
-    let out = run_as(OffBranch::Switch, "checkout; checkout_done");
+#[test]
+fn switch_moves_the_checkout_to_main_stashing_its_work_and_drops_the_record() {
+    if !have(&["git"]) {
+        return;
+    }
+    let repos = Repos::new("switch");
+    repos.run("checkout");
+    repos.run("checkout_done");
+    let out = repos.run_as(OffBranch::Switch, "checkout; checkout_done");
     assert!(
         out.contains("Back to your work: git switch feature && git stash pop"),
         "{out}"
     );
-    let out = run(
+    let out = repos.run(
         r#"git -C "$CHECKOUT" branch --show-current; git -C "$CHECKOUT" log -1 --format=%s
 git -C "$CHECKOUT" stash list --format=%s; [ -e "$CHECKOUT/wip" ] || echo stashed
 git -C "$CHECKOUT" rev-parse -q --verify refs/vinopilot/installed || echo gone"#,
@@ -623,10 +672,22 @@ git -C "$CHECKOUT" rev-parse -q --verify refs/vinopilot/installed || echo gone"#
         out,
         "main\ntwo\nOn feature: vinopilot: feature before switching to main\nstashed\ngone\n"
     );
-    assert!(!tmp.join("share/worktrees/checkout").exists());
-    // On main already, either is a plain pull.
-    let out = run_as(OffBranch::Switch, "checkout");
-    assert!(out.contains("== git pull in"), "{out}");
-    assert!(!out.contains("switching"), "{out}");
-    std::fs::remove_dir_all(&tmp).unwrap();
+    assert!(!repos.worktree().exists());
+}
+
+#[test]
+fn a_checkout_on_main_is_a_plain_pull_either_way() {
+    if !have(&["git"]) {
+        return;
+    }
+    let repos = Repos::new("main");
+    repos.run(
+        r#"git -C "$CHECKOUT" stash -q --include-untracked; git -C "$CHECKOUT" switch -q main"#,
+    );
+    for off_branch in [OffBranch::Worktree, OffBranch::Switch] {
+        let out = repos.run_as(off_branch, "checkout");
+        assert!(out.contains("== git pull in"), "{out}");
+        assert!(!out.contains("switching"), "{out}");
+        assert!(!out.contains("installing main from"), "{out}");
+    }
 }

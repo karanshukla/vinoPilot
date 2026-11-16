@@ -176,35 +176,45 @@ impl Pilot {
         }
         let finished = self.job.as_ref().map(Job::outcome);
         if !self.job_settled && finished.as_ref().is_some_and(|o| *o != Outcome::Running) {
-            self.job_settled = true;
-            if finished != Some(Outcome::Done) {
-                self.queue.clear();
-            }
-            // A checkout may have moved, so its "behind" is stale too.
-            if self
-                .job
-                .as_ref()
-                .is_some_and(|j| j.channel == Channel::Source)
-                && !self.latest.is_empty()
-            {
-                self.check(ctx);
-            }
-            self.rescan(ctx);
+            self.settle_job(ctx, finished);
         }
-        // Update all: the next one once the scan after the last has landed.
-        if !self.busy() && self.job_settled && self.scanning.is_none() && !self.queue.is_empty() {
-            let id = self.queue.remove(0);
-            if let Some(installed) = self
-                .local
-                .get(&id)
-                .and_then(|local| local.installed.clone())
-            {
-                self.start(ctx, id, installed.channel, Action::Update);
-            }
+        if !self.busy() && self.job_settled && self.scanning.is_none() {
+            self.update_next_queued(ctx);
         }
     }
 
-    /// The whole window.
+    /// After a job: rescan, and re-check a source install, whose checkout may
+    /// have moved and left its "behind" stale. A failure ends Update all.
+    fn settle_job(&mut self, ctx: &egui::Context, finished: Option<Outcome>) {
+        self.job_settled = true;
+        if finished != Some(Outcome::Done) {
+            self.queue.clear();
+        }
+        let moved_a_checkout = self
+            .job
+            .as_ref()
+            .is_some_and(|j| j.channel == Channel::Source);
+        if moved_a_checkout && !self.latest.is_empty() {
+            self.check(ctx);
+        }
+        self.rescan(ctx);
+    }
+
+    /// Update all's next component, once the scan after the last has landed.
+    fn update_next_queued(&mut self, ctx: &egui::Context) {
+        if self.queue.is_empty() {
+            return;
+        }
+        let id = self.queue.remove(0);
+        if let Some(installed) = self
+            .local
+            .get(&id)
+            .and_then(|local| local.installed.clone())
+        {
+            self.start(ctx, id, installed.channel, Action::Update);
+        }
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll(&ctx);
@@ -221,22 +231,9 @@ impl Pilot {
                 )
                 .show(ui, |ui| self.log(ui));
         }
-        // With the app's title bar, the title line becomes the bar the window is dragged by.
         let bar = self.app_title_bar;
         if bar {
-            let narrow = header_width(ui, ui.available_width() - widgets::PAGE_INSET) < NARROW;
-            // Both halves act on the window, one after the other.
-            let pilot = std::cell::RefCell::new(&mut *self);
-            vino_ui::window::bar(
-                ui,
-                widgets::PAGE_INSET,
-                |ui| pilot.borrow_mut().title_line(ui, !narrow),
-                |ui| {
-                    if !narrow {
-                        pilot.borrow_mut().actions(ui);
-                    }
-                },
-            );
+            self.title_bar(ui);
         }
         egui::CentralPanel::default()
             .frame(
@@ -250,17 +247,50 @@ impl Pilot {
                     }),
             )
             .show(ui, |ui| {
-                // Above the scroll area, as wide as the cards.
-                ui.scope(|ui| {
-                    ui.set_max_width(header_width(ui, ui.available_width()));
-                    self.header(ui, bar);
-                });
+                self.header_above_the_cards(ui, bar);
                 ui.add_space(6.0);
                 widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
                     self.grid(ui);
                     self.settings(ui);
                 });
             });
+    }
+}
+
+impl Pilot {
+    /// With the app's title bar, the title line becomes the bar the window
+    /// is dragged by.
+    fn title_bar(&mut self, ui: &mut egui::Ui) {
+        let narrow = header_width(ui, ui.available_width() - widgets::PAGE_INSET) < NARROW;
+        let pilot = std::cell::RefCell::new(self);
+        vino_ui::window::bar(
+            ui,
+            widgets::PAGE_INSET,
+            |ui| pilot.borrow_mut().title_line(ui, !narrow),
+            |ui| {
+                if !narrow {
+                    pilot.borrow_mut().actions(ui);
+                }
+            },
+        );
+    }
+
+    /// The header, outside the scroll area and as wide as the cards.
+    fn header_above_the_cards(&mut self, ui: &mut egui::Ui, bar: bool) {
+        ui.scope(|ui| {
+            ui.set_max_width(header_width(ui, ui.available_width()));
+            self.header(ui, bar);
+        });
+    }
+
+    /// The desktop's light/dark switch may have flipped while the window was
+    /// in the background.
+    fn follow_the_desktop_theme_on_focus(&mut self, ui: &egui::Ui) {
+        let focused = ui.input(|input| input.focused);
+        if focused && !self.focused {
+            theme::follow_desktop(ui.ctx());
+        }
+        self.focused = focused;
     }
 }
 
@@ -283,12 +313,7 @@ fn tilde(path: &std::path::Path) -> String {
 
 impl eframe::App for Pilot {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // The desktop's light/dark switch may have flipped while the window was in the background.
-        let focused = ui.input(|input| input.focused);
-        if focused && !self.focused {
-            theme::follow_desktop(ui.ctx());
-        }
-        self.focused = focused;
+        self.follow_the_desktop_theme_on_focus(ui);
         Pilot::ui(self, ui);
         if self.app_title_bar {
             vino_ui::window::edges(ui);

@@ -1,43 +1,18 @@
 //! A card's Uninstall… confirms in place, saying what goes and what stays.
 
+mod support;
+
 use std::collections::HashMap;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use vino_ui::{App, theme};
-use vinopilot_core::Config;
+use vino_ui::App;
 use vinopilot_core::catalog::{self, Channel, Id};
-use vinopilot_core::detect::{Installed, Local};
 use vinopilot_gui::Pilot;
 
 fn window(id: Id, channel: Channel) -> Harness<'static, (Pilot, bool)> {
-    let local = HashMap::from([(
-        id,
-        Local {
-            installed: Some(Installed {
-                channel,
-                version: Some("1.0.0".into()),
-            }),
-            ..Default::default()
-        },
-    )]);
-    let config = Config {
-        source_root: "/nowhere".into(),
-    };
-    let mut h = Harness::builder()
-        .with_size((1000.0, 720.0))
-        .build_ui_state(
-            |ui, (pilot, styled): &mut (Pilot, bool)| {
-                if !*styled {
-                    theme::apply(ui.ctx());
-                    *styled = true;
-                }
-                pilot.ui(ui);
-            },
-            (Pilot::with(config, local, HashMap::new()), false),
-        );
-    h.run();
-    h
+    let local = HashMap::from([(id, support::installed(channel, "1.0.0"))]);
+    support::window(local, HashMap::new(), Vec::new())
 }
 
 #[test]

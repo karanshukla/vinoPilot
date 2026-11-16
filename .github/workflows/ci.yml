@@ -51,6 +51,21 @@ jobs:
       - run: uv run --frozen pytest -q
       - run: uv build
 
+  # Every test a comment cites is a real #[test] fn or def test_
+  # (docs/comment-style.md). Also part of `cargo test` and pytest; its own
+  # job so a broken citation is named on the PR.
+  doc-links:
+    name: Doc Links
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - run: cargo test --locked -p vinopilot --test doc_links
+      - run: python3 tui/tests/test_doc_links.py
+
   msrv:
     runs-on: ubuntu-latest
     timeout-minutes: 30

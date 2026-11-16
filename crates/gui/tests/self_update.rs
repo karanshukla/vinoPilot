@@ -1,14 +1,15 @@
 //! The header's version button (plain until a check, then the update) and
 //! the About popup beside it.
 
+mod support;
+
 use std::collections::HashMap;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use vino_ui::{App, theme};
-use vinopilot_core::Config;
+use vino_ui::App;
 use vinopilot_core::catalog::{Channel, Id};
-use vinopilot_core::detect::{Installed, Local, Part, SystemPackage};
+use vinopilot_core::detect::{Local, Part, SystemPackage};
 use vinopilot_core::remote::Latest;
 use vinopilot_gui::{Pilot, VERSION};
 
@@ -17,39 +18,16 @@ fn header(latest: HashMap<Id, Latest>) -> Harness<'static, (Pilot, bool)> {
 }
 
 fn header_with(latest: HashMap<Id, Latest>, parts: Vec<Part>) -> Harness<'static, (Pilot, bool)> {
-    let local = Local {
-        installed: Some(Installed {
-            channel: Channel::Release,
-            version: Some(VERSION.into()),
-        }),
-        ..Default::default()
-    };
-    window(local, latest, parts)
+    window(support::installed(Channel::Release, VERSION), latest, parts)
 }
 
+/// The window with vinoPilot itself as `local`.
 fn window(
     local: Local,
     latest: HashMap<Id, Latest>,
     parts: Vec<Part>,
 ) -> Harness<'static, (Pilot, bool)> {
-    let local = HashMap::from([(Id::App(App::Pilot), local)]);
-    let config = Config {
-        source_root: "/nowhere".into(),
-    };
-    let mut h = Harness::builder()
-        .with_size((1000.0, 720.0))
-        .build_ui_state(
-            |ui, (pilot, styled): &mut (Pilot, bool)| {
-                if !*styled {
-                    theme::apply(ui.ctx());
-                    *styled = true;
-                }
-                pilot.ui(ui);
-            },
-            (Pilot::with(config, local, latest).with_parts(parts), false),
-        );
-    h.run();
-    h
+    support::window(HashMap::from([(Id::App(App::Pilot), local)]), latest, parts)
 }
 
 #[test]
@@ -106,16 +84,12 @@ fn about_shows_how_vinopilot_and_its_commands_are_installed() {
 #[test]
 fn a_deb_install_updates_from_the_header_like_any_other() {
     let local = Local {
-        installed: Some(Installed {
-            channel: Channel::Deb,
-            version: Some(VERSION.into()),
-        }),
         system_package: Some(SystemPackage {
             kind: "deb",
             packages: vec!["vinopilot".into()],
             remove: "sudo apt remove vinopilot".into(),
         }),
-        ..Default::default()
+        ..support::installed(Channel::Deb, VERSION)
     };
     let parts = vec![Part {
         command: "vinopilot-gui",

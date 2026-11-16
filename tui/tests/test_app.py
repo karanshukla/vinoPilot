@@ -72,7 +72,17 @@ async def test_install_asks_which_way_then_runs(fake_bin: Path, calls) -> None:
         assert "checksum verified" in text
         assert "✓ Done vinowatch" in text
     assert ["--json", "install", "vinowatch", "--via", "source"] in calls()
-    # The table is rescanned afterwards, offline since nothing was checked.
+
+
+async def test_an_install_rescans_offline_when_nothing_was_checked(fake_bin: Path, calls) -> None:
+    app = PilotApp()
+    async with app.run_test() as pilot:
+        await settle(app, pilot)
+        app.query_one(DataTable).move_cursor(row=1)
+        await pilot.press("i")
+        await pilot.pause()
+        await pilot.press("down", "enter")
+        await settle(app, pilot)
     assert calls()[-1] == ["--json", "list"]
 
 
@@ -194,6 +204,15 @@ async def test_vinopilot_is_in_the_status_line_not_the_table(fake_bin: Path) -> 
         assert app.status_text.startswith("vinoPilot 9.9.9")
 
 
+async def test_vinopilots_own_update_is_not_counted_with_the_tables(fake_bin: Path) -> None:
+    app = PilotApp()
+    async with app.run_test() as pilot:
+        await settle(app, pilot)
+        await pilot.press("p")
+        await settle(app, pilot)
+        assert "1 update available" in app.status_text
+
+
 async def test_p_checks_then_updates_then_restarts(fake_bin: Path, calls) -> None:
     app = PilotApp()
     async with app.run_test() as pilot:
@@ -202,8 +221,6 @@ async def test_p_checks_then_updates_then_restarts(fake_bin: Path, calls) -> Non
         await settle(app, pilot)
         assert ["--json", "check"] in calls()
         assert app.status_text.startswith("vinoPilot 9.9.9, p updates to v10.0.0")
-        # vinoPilot's own update isn't one of the table's.
-        assert "1 update available" in app.status_text
 
         await pilot.press("p")
         await settle(app, pilot)

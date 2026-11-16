@@ -29,7 +29,7 @@ CI also builds the release tarball, the .deb, the .rpm and the Flatpak the way `
 - `crates/cli/tests/cli.rs` is the `--json` contract. Change it when you change the shape, and say so in the changelog and `docs/json-api.md`.
 - Changed the window: regenerate the pictures with `cargo test -p vinopilot-gui --test screenshots -- --ignored` (needs a GPU or lavapipe) and commit `docs/images`.
 - Changed an app's steps in `crates/core/src/catalog/`: bless the snapshot (`VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core`), run that install, update and uninstall for real, and say so in the PR. The tests only check the scripts parse and that none changed by accident. [docs/how-it-works.md](docs/how-it-works.md#the-steps) has the layout.
-- Keep code comments to the *why*, one or two lines.
+- Comments are the last resort: extract, name, or pin a rule with a test pair first, and link the test from the code it governs. See [docs/comment-style.md](docs/comment-style.md); `crates/cli/tests/doc_links.rs` and `tui/tests/test_doc_links.py` check the links.
 - Commits are conventional (`feat:`, `fix:`, `docs:`, ...); the changelog is generated from them with `git cliff`.
 - Every Actions `uses:` is pinned to a commit SHA with a version comment.
 - A `deny.toml` advisory ignore needs a written reason next to it.

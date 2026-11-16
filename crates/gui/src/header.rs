@@ -29,7 +29,6 @@ impl Pilot {
             });
         }
         if narrow && bar {
-            // The site, which the bar's title line leaves out.
             ui.horizontal(|ui| {
                 self.actions(ui);
                 site_link(ui);
