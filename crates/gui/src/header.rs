@@ -29,8 +29,7 @@ impl Pilot {
             });
         }
         if narrow && bar {
-            // The site, which the bar's title line leaves out to keep clear
-            // of the window buttons.
+            // The site, which the bar's title line leaves out.
             ui.horizontal(|ui| {
                 self.actions(ui);
                 site_link(ui);
@@ -64,7 +63,7 @@ impl Pilot {
         let installed = self
             .local
             .get(&Id::App(vino_ui::App::Pilot))
-            .and_then(|l| l.installed.clone());
+            .and_then(|local| local.installed.clone());
         if let Some(newer) = self.updated_to(installed.as_ref()) {
             if ui
                 .add(Button::primary(format!("Restart into {newer}")).small())
@@ -86,10 +85,10 @@ impl Pilot {
         }
         let how = installed.as_ref().map_or_else(
             || "This window isn't an installed vinoPilot".to_string(),
-            |i| {
+            |installed| {
                 format!(
                     "Installed from {}",
-                    i.channel.label(Id::App(vino_ui::App::Pilot))
+                    installed.channel.label(Id::App(vino_ui::App::Pilot))
                 )
             },
         );
@@ -168,10 +167,12 @@ impl Pilot {
             .show(ui, |ui| {
                 dim(ui, "Installed from");
                 match &local.installed {
-                    Some(i) => {
-                        let label = i.channel.label(Id::App(vino_ui::App::Pilot));
-                        match i.version.as_deref() {
-                            Some(v) if v != VERSION => ui.label(format!("{label}, {v}")),
+                    Some(installed) => {
+                        let label = installed.channel.label(Id::App(vino_ui::App::Pilot));
+                        match installed.version.as_deref() {
+                            Some(version) if version != VERSION => {
+                                ui.label(format!("{label}, {version}"))
+                            }
                             _ => ui.label(label),
                         };
                     }
@@ -183,9 +184,9 @@ impl Pilot {
                     }
                 }
                 ui.end_row();
-                if let Some(c) = &local.checkout {
+                if let Some(checkout) = &local.checkout {
                     dim(ui, "Checkout");
-                    ui.label(format!("{} ({})", tilde(&c.path), c.describe));
+                    ui.label(format!("{} ({})", tilde(&checkout.path), checkout.describe));
                     ui.end_row();
                 }
                 dim(ui, "Updates");

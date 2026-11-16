@@ -148,7 +148,9 @@ impl Pilot {
 
     fn update(&self, id: Id) -> Update {
         status::update(
-            self.local.get(&id).and_then(|l| l.installed.as_ref()),
+            self.local
+                .get(&id)
+                .and_then(|local| local.installed.as_ref()),
             self.latest.get(&id),
         )
     }
@@ -192,7 +194,11 @@ impl Pilot {
         // Update all: the next one once the scan after the last has landed.
         if !self.busy() && self.job_settled && self.scanning.is_none() && !self.queue.is_empty() {
             let id = self.queue.remove(0);
-            if let Some(installed) = self.local.get(&id).and_then(|l| l.installed.clone()) {
+            if let Some(installed) = self
+                .local
+                .get(&id)
+                .and_then(|local| local.installed.clone())
+            {
                 self.start(ctx, id, installed.channel, Action::Update);
             }
         }
@@ -202,7 +208,7 @@ impl Pilot {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll(&ctx);
-        let p = theme::palette(&ctx);
+        let palette = theme::palette(&ctx);
 
         if self.job.is_some() {
             egui::Panel::bottom("log")
@@ -210,15 +216,12 @@ impl Pilot {
                 .default_size(220.0)
                 .frame(
                     egui::Frame::NONE
-                        .fill(p.surface)
+                        .fill(palette.surface)
                         .inner_margin(egui::Margin::same(12)),
                 )
                 .show(ui, |ui| self.log(ui));
         }
-        // With the app's title bar, the header's title line moves up into a
-        // bar of its own, with the window buttons at its end: that bar is
-        // what the window is dragged by. Update all and the rest stay beside
-        // the title where there's room, as they were.
+        // With the app's title bar, the title line becomes the bar the window is dragged by.
         let bar = self.app_title_bar;
         if bar {
             let narrow = header_width(ui, ui.available_width() - widgets::PAGE_INSET) < NARROW;
@@ -236,15 +239,18 @@ impl Pilot {
             );
         }
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(p.bg).inner_margin(egui::Margin {
-                left: widgets::PAGE_INSET as i8,
-                right: 0,
-                top: if bar { 2 } else { 20 },
-                bottom: 0,
-            }))
+            .frame(
+                egui::Frame::NONE
+                    .fill(palette.bg)
+                    .inner_margin(egui::Margin {
+                        left: widgets::PAGE_INSET as i8,
+                        right: 0,
+                        top: if bar { 2 } else { 20 },
+                        bottom: 0,
+                    }),
+            )
             .show(ui, |ui| {
-                // Above the scroll area, so it stays put; as wide as the
-                // cards, which sit inside the scroll bar and its gap.
+                // Above the scroll area, as wide as the cards.
                 ui.scope(|ui| {
                     ui.set_max_width(header_width(ui, ui.available_width()));
                     self.header(ui, bar);
@@ -262,8 +268,8 @@ impl Pilot {
 /// <branch>/<commit>/files/libexec/vinopilot/vinopilot-gui`, where
 /// packaging/flatpak/host-run.sh starts it on the host.
 fn in_flatpak(exe: &std::path::Path) -> bool {
-    let mut parts = exe.components().map(|c| c.as_os_str());
-    parts.any(|c| c == "app") && parts.next().is_some_and(|c| c == desktop::APP_ID)
+    let mut parts = exe.components().map(|part| part.as_os_str());
+    parts.any(|part| part == "app") && parts.next().is_some_and(|part| part == desktop::APP_ID)
 }
 
 /// `/home/k/x` as `~/x`.
@@ -278,7 +284,7 @@ fn tilde(path: &std::path::Path) -> String {
 impl eframe::App for Pilot {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // The desktop's light/dark switch may have flipped while the window was in the background.
-        let focused = ui.input(|i| i.focused);
+        let focused = ui.input(|input| input.focused);
         if focused && !self.focused {
             theme::follow_desktop(ui.ctx());
         }
