@@ -145,8 +145,9 @@ trash_checkout() {
 }"#;
 
 /// `vinowhisper-upgrade --uninstall` in releases that have it, else the same
-/// by hand: `vinowhispers_own_uninstaller_runs_when_it_has_one` and
-/// `uninstalling_vinowhisper_deletes_its_models_and_keeps_transcripts_and_settings`.
+/// by hand (pinned by `catalog::tests::vinowhispers_own_uninstaller_runs_when_it_has_one`,
+/// `catalog::tests::an_upgrade_script_without_uninstall_is_removed_not_run`,
+/// `catalog::tests::uninstalling_vinowhisper_deletes_its_models_and_keeps_transcripts_and_settings`).
 pub(super) const WHISPER_UNINSTALL: &str = r#"if [ -x "$BIN/vinowhisper-upgrade" ] && grep -q -- '--uninstall' "$BIN/vinowhisper-upgrade"; then
     "$BIN/vinowhisper-upgrade" --uninstall </dev/null
     exit
@@ -190,8 +191,8 @@ fi
 drop_cargo_copies vinospeak-gui
 "#;
 
-/// `vinoopeneffects-upgrade --uninstall` in releases that have it. Before
-/// that the uninstaller shipped only in the repo: the checkout's, or a
+/// `vinoopeneffects-upgrade --uninstall` in releases that have it. Older
+/// releases ship the uninstaller only in the repo: the checkout's, or a
 /// shallow clone's.
 pub(super) const OPENEFFECTS_UNINSTALL: &str = r#"if [ -x "$BIN/vinoopeneffects-upgrade" ] && grep -q -- '--uninstall' "$BIN/vinoopeneffects-upgrade"; then
     bash "$BIN/vinoopeneffects-upgrade" --uninstall </dev/null
@@ -223,7 +224,10 @@ install -Dm755 "$tmp/ovfetch-x86_64-linux" "$BIN/ovfetch"
 /// Before a package step: `fetch` (download, then the checksum), `as_root`
 /// (pkexec for the one command that needs it) and `scoped_flatpak` (the
 /// user's installation, or the system's through `as_root`). Why each is the
-/// way it is: docs/how-it-works.md, "Packages and Flatpaks".
+/// way it is: docs/how-it-works.md, "Packages and Flatpaks". The checksum is
+/// in `SHA256SUMS` or in the file's own `.sha256` (pinned by
+/// `catalog::tests::a_flatpak_listed_in_sha256sums_is_checked_then_installed`,
+/// `catalog::tests::a_flatpak_with_its_own_sha256_file_is_checked_then_installed`).
 pub(super) const PACKAGE: &str = r#"tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 fetch() {

@@ -12,9 +12,11 @@ use Channel::{Deb, Flatpak, Package, Release, Rpm, Source};
 
 /// The steps for `action` on `id` installed (or to be installed) through
 /// `channel`. Empty when that combination doesn't exist. Updating or
-/// uninstalling vinoPilot takes the terminal UI along. Uninstalling a
-/// source install ends by moving its checkout to the trash; installing or
-/// updating one ends with `checkout_done`.
+/// uninstalling vinoPilot takes the terminal UI along (pinned by
+/// `catalog::tests::the_terminal_ui_follows_vinopilots_updates_and_uninstall`).
+/// Uninstalling a source install ends by moving its checkout to the trash
+/// (pinned by `catalog::tests::uninstalling_from_source_trashes_the_checkout_last`);
+/// installing or updating one ends with `checkout_done`.
 pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
     let mut steps = component_steps(id, channel, action);
     if steps.is_empty() {
@@ -35,8 +37,10 @@ pub fn steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
     steps
 }
 
+/// A Flatpak is matched before the apps' own tables, whose `(_, Uninstall)`
+/// arms uninstall from the home (pinned by
+/// `catalog::tests::a_flatpak_installs_and_uninstalls_its_app_id_in_one_step`).
 fn component_steps(id: Id, channel: Channel, action: Action) -> Vec<Step> {
-    // Before the apps' own tables, whose `_` uninstalls are for the home.
     if let (Flatpak, Some(app_id)) = (channel, id.flatpak()) {
         return flatpak_bundle(id, app_id, action);
     }
@@ -211,7 +215,8 @@ fn open_effects(channel: Channel, action: Action) -> Vec<Step> {
 }
 
 /// Root throughout, but the checkout is pulled as the user so it stays the
-/// user's: `vinoauthfaces_checkout_is_pulled_as_the_user_then_deployed_as_root`.
+/// user's (pinned by
+/// `catalog::tests::vinoauthfaces_checkout_is_pulled_as_the_user_then_deployed_as_root`).
 fn auth_face(channel: Channel, action: Action) -> Vec<Step> {
     match (channel, action) {
         (Release, Install) => as_root("release_run install.sh"),
@@ -230,8 +235,8 @@ fn auth_face(channel: Channel, action: Action) -> Vec<Step> {
 }
 
 /// Each install drops the other channel's copy, which would otherwise shadow
-/// it or be what detection finds:
-/// `installing_ovfetch_or_vinopilot_drops_the_other_channels_copy`.
+/// it or be what detection finds (pinned by
+/// `catalog::tests::installing_ovfetch_or_vinopilot_drops_the_other_channels_copy`).
 fn ovfetch(channel: Channel, action: Action) -> Vec<Step> {
     match (channel, action) {
         (Release, Install | Update) => {

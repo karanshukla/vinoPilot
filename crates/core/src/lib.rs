@@ -13,6 +13,8 @@ pub mod detect;
 pub mod job;
 pub mod remote;
 pub mod status;
+#[cfg(test)]
+mod test_support;
 mod version;
 
 pub use catalog::{Action, Channel, Id};

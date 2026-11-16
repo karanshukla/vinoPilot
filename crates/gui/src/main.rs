@@ -8,7 +8,6 @@ fn main() -> eframe::Result {
             println!("vinopilot-gui {VERSION}");
             return Ok(());
         }
-        // The app menu entry, for installs that aren't install.sh's.
         Some("--install-desktop") => {
             let exe = std::env::current_exe().expect("this binary's path");
             match desktop::install(&exe) {

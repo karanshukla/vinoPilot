@@ -188,7 +188,8 @@ fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
     Ok(())
 }
 
-/// `list --json` and `check --json`: docs/json-api.md.
+/// `list --json` and `check --json`: docs/json-api.md (pinned by
+/// `crates/cli/tests/cli.rs::every_component_has_every_field`).
 fn print_document(config: &Config, components: &[status::Component]) {
     let doc = serde_json::json!({
         "vinopilot": VERSION,
@@ -270,7 +271,10 @@ fn print_duplicate_installs(components: &[status::Component]) {
     }
 }
 
-/// Runs an action, printing its output as it comes.
+/// Runs an action, printing its output as it comes. With `--json`, a line
+/// event per line, then one done event; the exit code says the same (pinned
+/// by `crates/cli/tests/cli.rs::an_action_prints_line_events_then_one_done_event`,
+/// `crates/cli/tests/cli.rs::a_failed_action_gives_the_installers_cross_line_as_its_reason_and_exits_1`).
 fn run(
     config: &Config,
     args: &Args,
@@ -400,7 +404,9 @@ fn update(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failu
     }
 }
 
-/// Asks on the terminal, after saying what goes and what stays.
+/// Asks on the terminal, after saying what goes and what stays. Without a
+/// terminal, `--yes` is required (pinned by
+/// `crates/cli/tests/cli.rs::uninstall_without_yes_or_a_terminal_is_a_usage_error`).
 fn confirm_uninstall(id: Id, channel: Channel) -> Result<(), Failure> {
     if !std::io::stdin().is_terminal() {
         return Err(Failure::Usage(

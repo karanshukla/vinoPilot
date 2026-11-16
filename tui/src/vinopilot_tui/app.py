@@ -31,11 +31,9 @@ CHANNEL_LABEL = {
     "release": "Release",
     "source": "Source",
     "flatpak": "Flatpak",
-    # vinopilot's own release, as a package.
     "deb": "deb package",
     "rpm": "rpm package",
 }
-# The command's own component: in the status line, not the table.
 SELF = "vinopilot"
 ACTIONS = ["install", "update", "uninstall"]
 
@@ -224,8 +222,7 @@ class PilotApp(App[None]):
         self.version = ""
         self.components: list[dict] = []
         self.me: dict = {}
-        # vinoPilot updated itself; p restarts into the new one.
-        self.updated = False
+        self.updated_itself = False
         self.restart = False
         self.checked = False
         self.scanning = False
@@ -341,7 +338,7 @@ class PilotApp(App[None]):
         """vinoPilot's version, and what p does with it."""
         mine = f"vinoPilot {self.version}" if self.version else "vinoPilot"
         installed = (self.me.get("installed") or {}).get("version")
-        if self.updated and installed and installed != self.version:
+        if self.updated_itself and installed and installed != self.version:
             return f"vinoPilot {installed} installed, p restarts into it"
         update = self.me.get("update") or {}
         if update.get("state") == "available" and self.me.get("installed"):
@@ -404,7 +401,7 @@ class PilotApp(App[None]):
     def action_pilot(self) -> None:
         """vinoPilot itself: check, then update, then restart."""
         installed = (self.me.get("installed") or {}).get("version")
-        if self.updated and installed and installed != self.version and self.job is None:
+        if self.updated_itself and installed and installed != self.version and self.job is None:
             self.restart = True
             self.exit()
             return
@@ -514,7 +511,7 @@ class PilotApp(App[None]):
         if event.outcome == "done":
             self.log_line(f"✓ Done{what}")
             if event.app == SELF:
-                self.updated = True
+                self.updated_itself = True
         elif event.outcome == "stopped":
             self.log_line(f"Stopped{what}")
         else:
@@ -531,7 +528,6 @@ def main() -> None:
     app = PilotApp()
     app.run()
     if app.restart:
-        # The update replaced this script too; start the new one in its place.
         os.execvp("vinopilot-tui", ["vinopilot-tui"])
 
 

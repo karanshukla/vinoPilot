@@ -126,19 +126,7 @@ fn command(step: &Step, env: &Env) -> Command {
         ("NO_COLOR", "1".into()),
     ];
     let mut cmd = if step.root {
-        // pkexec clears the environment: pass what the step reads, and
-        // SUDO_USER so vinoAuthFace's scripts find the desktop user.
-        let mut cmd = crate::command("pkexec");
-        cmd.arg("env");
-        for (k, v) in &vars {
-            cmd.arg(format!("{k}={v}"));
-        }
-        if let Ok(user) = std::env::var("USER") {
-            cmd.arg(format!("SUDO_USER={user}"));
-        }
-        cmd.arg("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-        cmd.args(["bash", "-c", &step.script]);
-        cmd
+        through_pkexec(&step.script, &vars)
     } else {
         let mut cmd = crate::command("bash");
         cmd.args(["-c", &step.script]).envs(vars);
@@ -147,6 +135,23 @@ fn command(step: &Step, env: &Env) -> Command {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    cmd
+}
+
+/// `script` as root. pkexec clears the environment, so `vars` go on `env`'s
+/// command line, with `SUDO_USER` for vinoAuthFace's scripts to find the
+/// desktop user.
+fn through_pkexec(script: &str, vars: &[(&str, String)]) -> Command {
+    let mut cmd = crate::command("pkexec");
+    cmd.arg("env");
+    for (k, v) in vars {
+        cmd.arg(format!("{k}={v}"));
+    }
+    if let Ok(user) = std::env::var("USER") {
+        cmd.arg(format!("SUDO_USER={user}"));
+    }
+    cmd.arg("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+    cmd.args(["bash", "-c", script]);
     cmd
 }
 

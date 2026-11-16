@@ -12,5 +12,5 @@
 
 - [ ] `--json` output unchanged, or the change is in CHANGELOG.md and `docs/json-api.md`
 - [ ] Changed the window: regenerated `docs/images` (`cargo test -p vinopilot-gui --test screenshots -- --ignored`)
-- [ ] Comments explain *why*, not what, and any measured claim carries a date
+- [ ] Comments follow docs/comment-style.md: a rule is a test, cited as "(pinned by ...)"; measured claims carry a date
 - [ ] No secrets, tokens or machine-specific paths committed
