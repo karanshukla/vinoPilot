@@ -55,7 +55,9 @@ main() {
 
     if [ "$uninstall" = 1 ]; then
         rm -f "$bin/vinopilot" "$bin/vinopilot-gui" "$bin/vinopilot-upgrade" "$desktop" "$icon"
-        command -v update-desktop-database >/dev/null && update-desktop-database -q "$data/applications" 2>/dev/null || true
+        if command -v update-desktop-database >/dev/null; then
+            update-desktop-database -q "$data/applications" 2>/dev/null || true
+        fi
         echo "Removed vinoPilot. Its setting is still in ${XDG_CONFIG_HOME:-$HOME/.config}/vinopilot."
         exit 0
     fi

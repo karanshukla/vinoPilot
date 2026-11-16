@@ -880,6 +880,21 @@ mod tests {
         assert_eq!(parse_uv_receipt(dir), Channel::Source);
     }
 
+    const OVFETCH_RECORD: &str = "\"ovfetch 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)\" = [\"ovfetch\"]\n";
+
+    #[test]
+    fn a_cargo_install_recorded_under_v1_counts() {
+        let crates = parse_crates_toml(&format!("[v1]\n{OVFETCH_RECORD}"));
+        assert_eq!(crates["ovfetch"], ("0.6.0".into(), Channel::Package));
+    }
+
+    #[test]
+    fn the_same_record_outside_v1_or_in_a_file_that_does_not_parse_does_not() {
+        assert!(parse_crates_toml(&format!("[v2]\n{OVFETCH_RECORD}")).is_empty());
+        assert!(parse_crates_toml(OVFETCH_RECORD).is_empty());
+        assert!(parse_crates_toml(&format!("[v1]\n{OVFETCH_RECORD}not toml [[[\n")).is_empty());
+    }
+
     #[test]
     fn a_crates_toml_with_no_installs_or_that_is_not_toml_has_none() {
         assert!(parse_crates_toml("").is_empty());

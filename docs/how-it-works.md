@@ -34,7 +34,7 @@ vinoPilot works out how each app is installed by looking, not by keeping its own
 
 - the `-upgrade` scripts the release installers leave in `~/.local/bin`
 - `uv`'s tool receipts
-- cargo's `~/.cargo/.crates.toml`
+- cargo's `~/.cargo/.crates.toml`, read as TOML: only the keys of its `[v1]` table count, and a file that doesn't parse reads as no cargo installs (since 2026-11-15; before that any quoted `name version (source)` line counted, wherever it was)
 - each binary's `--version` (given two seconds to answer)
 
 So it also sees apps you installed by hand before vinoPilot existed.

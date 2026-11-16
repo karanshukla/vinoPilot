@@ -14,6 +14,11 @@ def test_find_is_none_when_the_env_var_points_nowhere(no_bin: Path) -> None:
     assert cli.find() is None
 
 
+def test_without_a_fixture_there_is_no_command_and_no_download() -> None:
+    assert cli.find() is None
+    assert "curl" not in " ".join(cli.INSTALL_COMMAND)
+
+
 def test_find_falls_back_to_local_bin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from conftest import write_fake
 

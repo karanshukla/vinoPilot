@@ -55,7 +55,7 @@ pass "--uninstall removes everything it installed"
 home2="$tmp/home2"
 mkdir -p "$home2"
 run "$home2" --no-gui >/dev/null || die "--no-gui"
-[ -x "$home2/.local/bin/vinopilot" ] && [ ! -e "$home2/.local/bin/vinopilot-gui" ] || die "--no-gui installed the window"
+{ [ -x "$home2/.local/bin/vinopilot" ] && [ ! -e "$home2/.local/bin/vinopilot-gui" ]; } || die "--no-gui installed the window"
 pass "--no-gui installs only the command"
 
 # A swapped tarball: the sums no longer match.
