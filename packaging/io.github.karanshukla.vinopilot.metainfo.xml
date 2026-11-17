@@ -62,6 +62,15 @@
   </provides>
   <!-- Newest first. release.yml checks the tag has its line here. -->
   <releases>
+    <release version="0.6.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Tell release builds from source builds: a dev build shows as one, with its git describe</li>
+          <li>Install vinoWhisper from its Flatpak bundle</li>
+          <li>Job progress and the update count on the launcher icon</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-11-14">
       <description>
         <ul>

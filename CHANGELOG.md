@@ -5,6 +5,19 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-17
+
+### Features
+
+- Tell a release from a source build by the version an app reports. Every vino app now prints `dev` for a build that isn't a release, and vinoPilot treats a `dev` binary as a source install even when a release marker sits beside it. The version column and card show `dev (git describe)` from the checkout, and a `dev` build is never offered an update by version number. vinoPilot stamps itself the same way: release builds print their version, a build from a checkout prints `dev`, and `--json`'s top-level `"vinopilot"` can now be `dev`.
+- vinoWhisper can be installed from its Flatpak bundle (`io.github.karanshukla.vinowhisper`), offered last on its card, as vinoSearch's is.
+- The launcher icon shows the running job's progress and a badge with the number of updates available (KDE's task manager, Dash to Dock).
+
+### Bug Fixes
+
+- Updating a system-wide Flatpak asks for a password through pkexec, instead of failing with "not allowed for user" when run from the window.
+- The launcher bar shows progress during a one-step job, instead of sitting at 0 until it ends.
+
 ## [0.5.0] - 2026-11-14
 
 ### Features
