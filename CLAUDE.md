@@ -33,7 +33,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 cargo deny check
 cargo build -p vinopilot -p vinopilot-gui && tests/install-e2e.sh target/debug
-.github/package-release.sh && tests/release-smoke.sh dist X.Y.Z   # needs the musl target, dpkg-deb, rpmbuild
+VINOPILOT_VERSION=X.Y.Z .github/package-release.sh && tests/release-smoke.sh dist X.Y.Z   # needs the musl target, dpkg-deb, rpmbuild
 cargo test -p vinopilot-gui --test screenshots -- --ignored   # regenerates docs/images
 cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --frozen ruff format --check .
 ```
@@ -58,4 +58,5 @@ cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --
 
 - Actions pinned to commit SHAs with a version comment; Dependabot with a 7-day cooldown, nothing auto-merges.
 - Conventional commits; CHANGELOG.md from `git cliff`. A release tag needs a matching `## [x.y.z]` section, a `<release>` line at the top of `packaging/io.github.karanshukla.vinopilot.metainfo.xml`, and every crate at that version.
+- **`vinopilot --version` is the release's number or `dev`.** `crates/core/build.rs` stamps it: `VINOPILOT_VERSION` (release.yml's build job, via package-release.sh; the Flatpak, .deb and .rpm repack those binaries, so they carry it) must equal the crate version, and with no variable a build with no `.git` above the crate (the crates.io tarball) is a release too. Anything else is `dev`. `vinopilot_core::VERSION` is the one constant; detect.rs reads a `dev` from any app as `Channel::Source`.
 - Releases: build (no write token; tarball, .deb, .rpm), flatpak (the bundle, on ubuntu-24.04), attest, publish, then crates.io by trusted publishing behind the `crates-io` environment's approval, core first.

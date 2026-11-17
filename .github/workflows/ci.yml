@@ -66,6 +66,42 @@ jobs:
       - run: cargo test --locked -p vinopilot --test doc_links
       - run: python3 tui/tests/test_doc_links.py
 
+  # A checkout builds as dev, release CI stamps the tag, and the published
+  # crates (no .git in their tarballs) are a release without the variable.
+  stamp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: An unstamped build prints dev
+        run: |
+          cargo build --locked -p vinopilot -p vinopilot-gui
+          test "$(target/debug/vinopilot --version)" = "vinopilot dev"
+          test "$(target/debug/vinopilot-gui --version)" = "vinopilot-gui dev"
+      - name: A stamped build prints its version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "vinopilot") | .version')
+          VINOPILOT_VERSION="$version" cargo build --locked -p vinopilot -p vinopilot-gui
+          test "$(target/debug/vinopilot --version)" = "vinopilot $version"
+          test "$(target/debug/vinopilot-gui --version)" = "vinopilot-gui $version"
+      - name: A stamp that is not the crate version fails the build
+        run: |
+          if VINOPILOT_VERSION=9.9.9 cargo build --locked -p vinopilot-core 2>/dev/null; then exit 1; fi
+      - name: The published core prints its version without the variable
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "vinopilot-core") | .version')
+          # --no-verify: the verify build would need the sibling crates on the registry.
+          cargo package --locked --no-verify -p vinopilot-core
+          tar -tzf "target/package/vinopilot-core-$version.crate" | grep -qx "vinopilot-core-$version/build.rs"
+          tar -tzf "target/package/vinopilot-core-$version.crate" | grep -qx "vinopilot-core-$version/src/stamp.rs"
+          mkdir "$RUNNER_TEMP/crate"
+          tar -xzf "target/package/vinopilot-core-$version.crate" -C "$RUNNER_TEMP/crate"
+          VINOPILOT_EXPECT_RELEASE=1 cargo test --manifest-path "$RUNNER_TEMP/crate/vinopilot-core-$version/Cargo.toml" --target-dir "$RUNNER_TEMP/crate-target" --lib a_build_outside_a_checkout_is_a_release
+
   msrv:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -116,7 +152,10 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # rpmbuild, for the .rpm; dpkg-deb is already there.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
-      - run: .github/package-release.sh
+      - name: Build and package, stamped as a release would be
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "vinopilot") | .version')
+          VINOPILOT_VERSION="$version" .github/package-release.sh
       - name: Smoke-test the tarball, the .deb and the .rpm
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "vinopilot") | .version')

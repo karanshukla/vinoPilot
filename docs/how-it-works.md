@@ -52,7 +52,7 @@ Nothing goes online until you press **Check for updates** (or run `vinopilot che
 - **A vinoSpeak installed from PyPI keeps its models** when uninstalled: there's no checkout or `vinospeak-upgrade` to run its uninstaller from. They're in `~/.cache/vinospeak`.
 - **Uninstalling a source install moves its checkout to the trash** (with `gio`, `kioclient` or `trash-put`), unless it has uncommitted, unpushed or stashed work: then it's kept and the uninstall says why. Copies an old `cargo install` left in `~/.cargo/bin` go too.
 - **Detection is a best guess for hand installs.** An app with no `-upgrade` script, no uv receipt and no cargo record but a binary in `~/.local/bin` shows as a source install.
-- **vinoAuthFace's channel comes from its version.** Release builds are stamped with their tag, checkouts say `dev`.
+- **A version of `dev` means a source build.** Release builds (and the Flatpak) are stamped with their tag, builds from a checkout say `dev`, and vinoPilot treats that as a source install whatever `-upgrade` script sits beside it. A `dev` build is never offered a release. vinoAuthFace has no marker, so its version is all there is. Older releases of the other apps print their last release's number even when built from a checkout, so they're still told by their markers. vinoPilot's own build follows the same rule; `cargo install vinopilot` from crates.io counts as a release.
 - Installers that want to ask you something get no terminal; each runs with its non-interactive defaults (vinoWhisper and vinoSpeak with `--gui`).
 
 ## The steps

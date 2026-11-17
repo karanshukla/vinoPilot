@@ -110,7 +110,7 @@ fn found_outside_any_home(c: &Value) -> bool {
 fn list_json_names_every_component() {
     let home = Home::new("list-ids");
     let doc = home.list();
-    assert_eq!(doc["vinopilot"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(doc["vinopilot"], vinopilot_core::VERSION);
     assert_eq!(doc["source_root"], home.join("src").to_str().unwrap());
     let ids: Vec<&str> = doc["components"]
         .as_array()
@@ -227,6 +227,49 @@ fn a_command_in_both_bins_is_listed_as_shadowed() {
     );
 }
 
+/// A `vinowatch` built from a checkout, beside the release installer's marker:
+/// it says `dev`, so it's a source build, with the checkout's `git describe`
+/// in `checkout` and no update from a number comparison.
+#[test]
+fn a_dev_binary_beside_a_release_marker_is_a_source_build_with_its_describe() {
+    let home = Home::new("dev-source");
+    home.script(".local/bin/vinowatch", "echo 'vinowatch dev'\n");
+    home.script(".local/bin/vinowatch-upgrade", "exit 0\n");
+    let checkout = home.join("src/vinoWatch");
+    fs::create_dir_all(&checkout).unwrap();
+    for args in [
+        &["init", "-q"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        ],
+        &["tag", "v3"],
+    ] {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&checkout)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+    let doc = home.list();
+    let watch = component(&doc, "vinowatch");
+    assert_eq!(
+        watch["installed"],
+        json!({"channel": "source", "version": "dev"})
+    );
+    assert_eq!(watch["checkout"]["describe"], "v3");
+    assert_ne!(watch["update"]["state"], "available");
+}
+
 #[test]
 fn an_action_prints_line_events_then_one_done_event() {
     let home = Home::new("events-done");
@@ -324,11 +367,27 @@ fn uninstalling_what_isnt_there_fails_without_running_anything() {
     assert!(stderr(&out).contains("isn't installed"));
 }
 
-#[test]
-fn version() {
+/// `vinopilot --version`, whatever the build.
+fn reported_version() -> String {
     let out = Home::new("version").run(&["--version"]);
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        format!("vinopilot {}", env!("CARGO_PKG_VERSION"))
-    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// Built with `VINOPILOT_VERSION` (release CI): the number, and it's the
+/// crate's (build.rs refuses any other). Without it, this test has nothing to
+/// say.
+#[test]
+fn a_release_build_reports_its_version() {
+    if let Some(stamped) = option_env!("VINOPILOT_VERSION") {
+        assert_eq!(reported_version(), format!("vinopilot {stamped}"));
+        assert_eq!(stamped, env!("CARGO_PKG_VERSION"));
+    }
+}
+
+/// Built in this checkout without the variable: `dev`.
+#[test]
+fn an_unstamped_build_reports_dev() {
+    if option_env!("VINOPILOT_VERSION").is_none() {
+        assert_eq!(reported_version(), "vinopilot dev");
+    }
 }

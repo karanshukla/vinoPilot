@@ -101,7 +101,7 @@ fn demo() -> Pilot {
         (
             Id::App(App::Pilot),
             Local {
-                installed: installed(Channel::Release, vinopilot_gui::VERSION),
+                installed: installed(Channel::Release, env!("CARGO_PKG_VERSION")),
                 checkout: None,
                 system_package: None,
                 shadowed: vec![],
@@ -155,7 +155,7 @@ fn demo() -> Pilot {
         (
             Id::App(App::Pilot),
             Latest {
-                release: release(&format!("v{}", vinopilot_gui::VERSION)),
+                release: release(&format!("v{}", env!("CARGO_PKG_VERSION"))),
                 ..Default::default()
             },
         ),

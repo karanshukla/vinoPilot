@@ -10,7 +10,14 @@
 # glibc: eframe dlopens libEGL, libwayland and libX11, which a static musl
 # binary can't. Build it on the oldest runner there is (ubuntu-22.04,
 # glibc 2.35) so it runs on older distros too.
+#
+# The binaries are stamped with VINOPILOT_VERSION (the version without a `v`),
+# which the .deb, .rpm and Flatpak repack unchanged; an unstamped build says
+# `dev` and has no package version, so this refuses to run without it.
 set -eu
+
+: "${VINOPILOT_VERSION:?set VINOPILOT_VERSION to the version being packaged, e.g. 0.5.0}"
+export VINOPILOT_VERSION
 
 cargo build --release --locked --target x86_64-unknown-linux-musl -p vinopilot
 cargo build --release --locked --target x86_64-unknown-linux-gnu -p vinopilot-gui
