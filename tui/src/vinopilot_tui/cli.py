@@ -12,11 +12,10 @@ import shutil
 import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Literal
 
 INSTALLER = "https://github.com/karanshukla/vinopilot/releases/latest/download/install.sh"
 
-# How the missing-command screen gets the command: the release installer,
-# hash-checked by itself, without the window. Patched in tests.
 INSTALL_COMMAND = ["bash", "-c", f"curl -fsSL {INSTALLER} | bash -s -- --no-gui"]
 
 
@@ -51,19 +50,20 @@ class CommandError(Exception):
 class Event:
     """One line of an action's output, or its end."""
 
-    kind: str  # "line" or "done"
+    kind: Literal["line", "done"]
     text: str = ""
     app: str = ""
     channel: str = ""
-    outcome: str = ""  # done, stopped, failed
+    outcome: str = ""
     reason: str = ""
 
     @staticmethod
     def parse(line: str) -> Event:
+        """A JSON event, or any other line as text: the command's stderr is merged
+        in (pinned by `test_cli.py::test_parse_tolerates_plain_text`)."""
         try:
             doc = json.loads(line)
         except ValueError:
-            # The command's own stderr, merged in: usage errors, `✗ ...`.
             return Event("line", text=line)
         if not isinstance(doc, dict) or doc.get("event") not in ("line", "done"):
             return Event("line", text=line)
@@ -77,6 +77,19 @@ class Event:
             outcome=str(result.get("outcome", "failed")),
             reason=str(result.get("reason") or ""),
         )
+
+
+def done_by_exit_code(code: int, last: str) -> Event:
+    """The end of a command that exited without a done event (a usage error, a
+    crash, or stopped before it started), from its exit code and last line
+    (pinned by `test_cli.py::test_exiting_without_a_done_event_is_a_failure_with_the_last_line`,
+    `test_cli.py::test_exiting_0_without_a_done_event_is_done`,
+    `test_cli.py::test_stop_ends_the_job`)."""
+    if code < 0:
+        return Event("done", outcome="stopped")
+    if code == 0:
+        return Event("done", outcome="done")
+    return Event("done", outcome="failed", reason=last)
 
 
 @dataclass
@@ -100,10 +113,7 @@ class Job:
             yield event
         code = self.process.wait()
         if not self.done:
-            # Exited without saying so: a usage error, a crash, or stopped
-            # before it started.
-            outcome = "stopped" if code < 0 else ("done" if code == 0 else "failed")
-            event = Event("done", outcome=outcome, reason=last if outcome == "failed" else "")
+            event = done_by_exit_code(code, last)
             self.done.append(event)
             yield event
 

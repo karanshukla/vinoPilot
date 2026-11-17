@@ -16,6 +16,17 @@ def write_fake(path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _never_the_real_vinopilot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test starts with no command to find and no installer to run;
+    `fake_bin` and `no_bin` put the fake in. A test that forgets them fails
+    instead of driving the machine's own `vinopilot` or downloading one."""
+    from vinopilot_tui import cli
+
+    monkeypatch.setenv("VINOPILOT_BIN", str(tmp_path / "no-vinopilot-here"))
+    monkeypatch.setattr(cli, "INSTALL_COMMAND", ["false"])
+
+
 @pytest.fixture
 def fake_bin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """The fake on `$VINOPILOT_BIN`, logging its calls to `calls` (see `calls`)."""

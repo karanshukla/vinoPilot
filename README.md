@@ -74,6 +74,8 @@ vinopilot steps search install    # print the shell an action would run, without
 
 App names work with or without the `vino`. `--via` takes `release` (the default), `source`, `pypi` or `crates`, and `flatpak` for vinoWhisper and vinoSearch. Exit codes: 0 done, 1 failed, 2 bad usage.
 
+Options go anywhere on the line. Short ones combine (`-yh`), `--` ends them, and a value on an option that takes none (`--json=x`) is refused.
+
 `--json` turns it into an API: `list` and `check` print one document, and actions print one event per line. A frontend in another language should drive that instead of reimplementing the catalog. [docs/json-api.md](docs/json-api.md) has the shape.
 
 There's a terminal UI too, a thin [Textual](https://textual.textualize.io/) frontend over `vinopilot --json`: `uv tool install vinopilot`, then `vinopilot-tui`. See [tui/README.md](tui/README.md).

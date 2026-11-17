@@ -63,7 +63,6 @@ impl Id {
 
     pub fn blurb(self) -> &'static str {
         match self {
-            // Its own card says what it is to the person using it.
             Id::App(App::Pilot) => "This app: installs and updates the others",
             Id::App(app) => app.blurb(),
             Id::Ovfetch => "Fetches the OpenVINO runtime an NPU needs",
@@ -71,11 +70,11 @@ impl Id {
         }
     }
 
-    /// `owner/name` on GitHub.
+    /// `owner/name` on GitHub. vinoPilot's is lowercase, like its release
+    /// URLs and its checkout folder (pinned by
+    /// `tests::vinopilots_checkout_folder_is_lowercase`).
     pub fn repo(self) -> &'static str {
         match self {
-            // Lowercase like its release URLs and its checkout folder:
-            // `vinopilots_checkout_folder_is_lowercase`.
             Id::App(App::Pilot) => "karanshukla/vinopilot",
             Id::App(app) => app.repo(),
             Id::Ovfetch => "karanshukla/ovfetch",
@@ -126,6 +125,10 @@ impl Id {
         }
     }
 
+    /// The ways in it offers, best first. vinoPilot's own Flatpak, like its
+    /// `.deb` and `.rpm`, is found but never offered (pinned by
+    /// `tests::only_vinowhisper_and_vinosearch_offer_their_flatpak`,
+    /// `tests::a_flatpak_is_never_the_default_way_in`).
     pub fn channels(self) -> Vec<Channel> {
         let mut all = Vec::new();
         if self != Id::Ui {
@@ -135,7 +138,6 @@ impl Id {
         if matches!(self.package(), Some(Package::PyPi(_) | Package::Crate(_))) {
             all.push(Channel::Package);
         }
-        // vinoPilot's own Flatpak is found, not offered: see `Channel::Deb`.
         if self.flatpak().is_some() && self != Id::App(App::Pilot) {
             all.push(Channel::Flatpak);
         }

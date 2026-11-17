@@ -16,3 +16,5 @@ homepage.workspace = true
 vino-ui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# cargo's and uv's own records, which are TOML.
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }

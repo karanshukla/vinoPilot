@@ -17,10 +17,13 @@ A cargo workspace plus a Python package beside it. Keep repo-level tooling langu
   - `status.rs`: installed + latest into "update available", and the `--json` component shape.
   - `job.rs`: runs steps in a background thread, streams lines through a `Notify` callback.
   - `lib.rs` `command()`: every child process goes through it, for the `PATH` fix-up (`~/.local/bin`, `~/.cargo/bin`).
-- `crates/cli` (`vinopilot`): hand-rolled args, `--json` is the API (docs/json-api.md, pinned by tests/cli.rs).
+- `crates/cli` (`vinopilot`): args through `lexopt`, `--json` is the API (docs/json-api.md, each rule cited to its test in tests/cli.rs).
 - `tui/` (`vinopilot` on PyPI, command `vinopilot-tui`): Textual. `cli.py` is the only thing that runs the command (`--json`, docs/json-api.md); `app.py` is the table, the log and the modal screens. It knows no catalog: names, channels, registries and update states all come from the JSON. Tests run against `tests/fake_vinopilot.py`, never cargo; `VINOPILOT_BIN=target/debug/vinopilot` tries it on the real thing.
-- `crates/gui` (`vinopilot-gui`): lib (`Pilot`) + thin main. A 3x3 grid (`CARDS`: seven apps, ovfetch, vinoUserInterface; one column when three don't fit), log panel at the bottom. vinoPilot has no card: its version and self-update are in the header, and Update all skips it.
+- `crates/gui` (`vinopilot-gui`): lib (`Pilot`) + thin main. `lib.rs` is the state, the background polling and `Pilot::ui`; `header.rs` (title, own version and update, About, Check/Update all), `cards.rs` (the grid and a card), `settings.rs` and `log.rs` each add an `impl Pilot` with their part of the window. A 3x3 grid (`CARDS`: seven apps, ovfetch, vinoUserInterface; one column when three don't fit), log panel at the bottom. vinoPilot has no card: its version and self-update are in the header, and Update all skips it.
 - `packaging/`: the .deb's `control`, the .rpm's spec, the Flatpak's manifest and its `host-run.sh`, and the metainfo all three share. `.github/package-distro.sh` and `package-flatpak.sh` wrap the tarball's two binaries with them; nothing is rebuilt. The menu entry and icon come from `vinopilot-gui --install-desktop` into the staging tree, not from a second copy here.
+- Tests: `crates/core/src/test_support.rs` (`Scratch`, a temp dir removed on drop; `put_command`) for core's unit tests; `crates/gui/tests/support` (`window`, `installed`) for the window's.
+
+Comments follow [docs/comment-style.md](docs/comment-style.md): a rule gets a named test pair, cited from the code as ``(pinned by `tests::name`)``; integration tests as `` `crates/cli/tests/cli.rs::name` ``, also from docs/json-api.md; the TUI's as `` `test_cli.py::test_name` ``. `crates/cli/tests/doc_links.rs` and `tui/tests/test_doc_links.py` (CI job Doc Links) fail on a citation with no such test.
 
 ## Commands
 

@@ -129,19 +129,7 @@ fn command(step: &Step, env: &Env) -> Command {
         ("NO_COLOR", "1".into()),
     ];
     let mut cmd = if step.root {
-        // pkexec clears the environment: pass what the step reads, and
-        // SUDO_USER so vinoAuthFace's scripts find the desktop user.
-        let mut cmd = crate::command("pkexec");
-        cmd.arg("env");
-        for (k, v) in &vars {
-            cmd.arg(format!("{k}={v}"));
-        }
-        if let Ok(user) = std::env::var("USER") {
-            cmd.arg(format!("SUDO_USER={user}"));
-        }
-        cmd.arg("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-        cmd.args(["bash", "-c", &step.script]);
-        cmd
+        through_pkexec(&step.script, &vars)
     } else {
         let mut cmd = crate::command("bash");
         cmd.args(["-c", &step.script]).envs(vars);
@@ -150,6 +138,23 @@ fn command(step: &Step, env: &Env) -> Command {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    cmd
+}
+
+/// `script` as root. pkexec clears the environment, so `vars` go on `env`'s
+/// command line, with `SUDO_USER` for vinoAuthFace's scripts to find the
+/// desktop user.
+fn through_pkexec(script: &str, vars: &[(&str, String)]) -> Command {
+    let mut cmd = crate::command("pkexec");
+    cmd.arg("env");
+    for (k, v) in vars {
+        cmd.arg(format!("{k}={v}"));
+    }
+    if let Ok(user) = std::env::var("USER") {
+        cmd.arg(format!("SUDO_USER={user}"));
+    }
+    cmd.arg("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+    cmd.args(["bash", "-c", script]);
     cmd
 }
 
@@ -311,6 +316,29 @@ mod tests {
         assert_eq!(clean("\x1b[1;32m✓\x1b[0m done"), "✓ done");
         assert_eq!(clean("10%\r50%\r100%"), "100%");
         assert_eq!(clean("plain"), "plain");
+    }
+
+    #[test]
+    fn colour_and_cursor_sequences_go_and_their_text_stays() {
+        assert_eq!(clean("\x1b[31merror\x1b[0m: no cargo"), "error: no cargo");
+        assert_eq!(clean("\x1b[38;5;208mwarn\x1b[m"), "warn");
+        assert_eq!(clean("\x1b[2K\x1b[1Gdone"), "done");
+    }
+
+    #[test]
+    fn a_progress_line_is_its_last_redraw_that_says_anything() {
+        assert_eq!(clean("  0%\r 50%\r100%\r"), "100%");
+        assert_eq!(clean("\r\r"), "");
+        assert_eq!(clean("Compiling\r\x1b[32mFinished\x1b[0m"), "Finished");
+    }
+
+    /// Only `ESC [` sequences are understood. Any other escape loses the
+    /// ESC and the character after it, so a terminal title's text and its
+    /// BEL stay in the line.
+    #[test]
+    fn an_osc_title_loses_its_introducer_and_keeps_its_text() {
+        assert_eq!(clean("\x1b]0;building\x07ready"), "0;building\x07ready");
+        assert_eq!(clean("\x1b(Bplain"), "Bplain");
     }
 
     fn env() -> Env {

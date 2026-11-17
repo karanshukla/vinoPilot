@@ -14,6 +14,11 @@ def test_find_is_none_when_the_env_var_points_nowhere(no_bin: Path) -> None:
     assert cli.find() is None
 
 
+def test_without_a_fixture_there_is_no_command_and_no_download() -> None:
+    assert cli.find() is None
+    assert "curl" not in " ".join(cli.INSTALL_COMMAND)
+
+
 def test_find_falls_back_to_local_bin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from conftest import write_fake
 
@@ -82,6 +87,13 @@ def test_exiting_without_a_done_event_is_a_failure_with_the_last_line(fake_bin: 
     assert events[-1].kind == "done"
     assert events[-1].outcome == "failed"
     assert "unknown command" in events[-1].reason
+
+
+def test_exiting_0_without_a_done_event_is_done() -> None:
+    import subprocess
+
+    job = cli.Job(subprocess.Popen(["true"], stdout=subprocess.PIPE, text=True), "nothing")
+    assert list(job.events()) == [Event("done", outcome="done")]
 
 
 def test_stop_ends_the_job(fake_bin: Path, tmp_path: Path) -> None:

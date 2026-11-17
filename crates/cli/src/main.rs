@@ -48,6 +48,8 @@ struct Args {
 }
 
 fn parse_args(raw: impl Iterator<Item = String>) -> Result<Args, String> {
+    use lexopt::prelude::*;
+
     let mut args = Args {
         json: false,
         yes: false,
@@ -56,36 +58,37 @@ fn parse_args(raw: impl Iterator<Item = String>) -> Result<Args, String> {
         source_root: None,
         rest: Vec::new(),
     };
-    let mut raw = raw.peekable();
-    while let Some(arg) = raw.next() {
-        let (flag, inline) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") => (f.to_string(), Some(v.to_string())),
-            _ => (arg.clone(), None),
-        };
-        let mut value = |name: &str| {
-            inline
-                .clone()
-                .or_else(|| raw.next())
-                .ok_or_else(|| format!("{name} needs a value"))
-        };
-        match flag.as_str() {
-            "--json" => args.json = true,
-            "--yes" | "-y" => args.yes = true,
-            "--all" => args.all = true,
-            "--via" => {
-                let v = value("--via")?;
-                args.via = Some(Channel::parse(&v).ok_or_else(|| {
-                    format!("--via {v}: use release, source, pypi, crates or flatpak")
+    let mut parser = lexopt::Parser::from_args(raw);
+    while let Some(option) = parser.next().map_err(|e| e.to_string())? {
+        match option {
+            Long("json") => args.json = true,
+            Long("yes") | Short('y') => args.yes = true,
+            Long("all") => args.all = true,
+            Long("via") => {
+                let way = option_value(&mut parser, "--via")?;
+                args.via = Some(Channel::parse(&way).ok_or_else(|| {
+                    format!("--via {way}: use release, source, pypi, crates or flatpak")
                 })?);
             }
-            "--source-root" => args.source_root = Some(PathBuf::from(value("--source-root")?)),
-            "-h" | "--help" => args.rest.insert(0, "help".into()),
-            "-V" | "--version" => args.rest.insert(0, "version".into()),
-            f if f.starts_with('-') => return Err(format!("unknown option {f} (see --help)")),
-            _ => args.rest.push(arg),
+            Long("source-root") => {
+                args.source_root = Some(PathBuf::from(option_value(&mut parser, "--source-root")?));
+            }
+            Long("help") | Short('h') => args.rest.insert(0, "help".into()),
+            Long("version") | Short('V') => args.rest.insert(0, "version".into()),
+            Long(name) => return Err(format!("unknown option --{name} (see --help)")),
+            Short(letter) => return Err(format!("unknown option -{letter} (see --help)")),
+            Value(operand) => args.rest.push(operand.to_string_lossy().into_owned()),
         }
     }
     Ok(args)
+}
+
+/// The value of `name`, after a space or an equals sign.
+fn option_value(parser: &mut lexopt::Parser, name: &str) -> Result<String, String> {
+    parser
+        .value()
+        .map(|value| value.to_string_lossy().into_owned())
+        .map_err(|_| format!("{name} needs a value"))
 }
 
 fn main() -> ExitCode {
@@ -185,7 +188,8 @@ fn list(config: &Config, args: &Args, online: bool) -> Result<(), Failure> {
     Ok(())
 }
 
-/// `list --json` and `check --json`: docs/json-api.md.
+/// `list --json` and `check --json`: docs/json-api.md (pinned by
+/// `crates/cli/tests/cli.rs::every_component_has_every_field`).
 fn print_document(config: &Config, components: &[status::Component]) {
     let doc = serde_json::json!({
         "vinopilot": VERSION,
@@ -267,7 +271,10 @@ fn print_duplicate_installs(components: &[status::Component]) {
     }
 }
 
-/// Runs an action, printing its output as it comes.
+/// Runs an action, printing its output as it comes. With `--json`, a line
+/// event per line, then one done event; the exit code says the same (pinned
+/// by `crates/cli/tests/cli.rs::an_action_prints_line_events_then_one_done_event`,
+/// `crates/cli/tests/cli.rs::a_failed_action_gives_the_installers_cross_line_as_its_reason_and_exits_1`).
 fn run(
     config: &Config,
     args: &Args,
@@ -397,7 +404,9 @@ fn update(config: &Config, args: &Args, operands: &[String]) -> Result<(), Failu
     }
 }
 
-/// Asks on the terminal, after saying what goes and what stays.
+/// Asks on the terminal, after saying what goes and what stays. Without a
+/// terminal, `--yes` is required (pinned by
+/// `crates/cli/tests/cli.rs::uninstall_without_yes_or_a_terminal_is_a_usage_error`).
 fn confirm_uninstall(id: Id, channel: Channel) -> Result<(), Failure> {
     if !std::io::stdin().is_terminal() {
         return Err(Failure::Usage(
@@ -549,6 +558,33 @@ mod tests {
             parse(&["--nope"]).err().unwrap(),
             "unknown option --nope (see --help)"
         );
+    }
+
+    #[test]
+    fn a_double_dash_ends_the_options() {
+        let args = parse(&["--json", "install", "--", "--all", "-y"]).unwrap();
+        assert!(args.json && !args.all && !args.yes);
+        assert_eq!(args.rest, ["install", "--all", "-y"]);
+    }
+
+    #[test]
+    fn short_options_cluster() {
+        let args = parse(&["uninstall", "pop", "-yh"]).unwrap();
+        assert!(args.yes);
+        assert_eq!(args.rest, ["help", "uninstall", "pop"]);
+        assert_eq!(
+            parse(&["-yx"]).err().unwrap(),
+            "unknown option -x (see --help)"
+        );
+    }
+
+    #[test]
+    fn a_value_on_an_option_that_takes_none_is_refused() {
+        assert_eq!(
+            parse(&["--json=x", "list"]).err().unwrap(),
+            "unexpected argument for option '--json': \"x\""
+        );
+        assert!(parse(&["--json", "list"]).is_ok());
     }
 
     #[test]

@@ -31,11 +31,9 @@ CHANNEL_LABEL = {
     "release": "Release",
     "source": "Source",
     "flatpak": "Flatpak",
-    # vinopilot's own release, as a package.
     "deb": "deb package",
     "rpm": "rpm package",
 }
-# The command's own component: in the status line, not the table.
 SELF = "vinopilot"
 ACTIONS = ["install", "update", "uninstall"]
 
@@ -54,13 +52,13 @@ def tilde(path: str) -> str:
     return "~" + path[len(home) :] if path.startswith(home) else path
 
 
-def about(c: dict) -> Text:
+def about(component: dict) -> Text:
     """The blurb, or which copy runs when there are two."""
-    shadowed = c.get("shadowed") or []
+    shadowed = component.get("shadowed") or []
     if not shadowed:
-        return Text(c.get("blurb", ""), style="dim")
-    s = shadowed[0]
-    runs, hidden = tilde(s["runs"]), tilde(s["hidden"])
+        return Text(component.get("blurb", ""), style="dim")
+    copies = shadowed[0]
+    runs, hidden = tilde(copies["runs"]), tilde(copies["hidden"])
     return Text(f"Two copies: {runs} runs, {hidden} doesn't", style="yellow")
 
 
@@ -224,8 +222,7 @@ class PilotApp(App[None]):
         self.version = ""
         self.components: list[dict] = []
         self.me: dict = {}
-        # vinoPilot updated itself; p restarts into the new one.
-        self.updated = False
+        self.updated_itself = False
         self.restart = False
         self.checked = False
         self.scanning = False
@@ -285,31 +282,31 @@ class PilotApp(App[None]):
 
     def show(self, doc: dict, online: bool) -> None:
         everything = list(doc.get("components", []))
-        self.me = next((c for c in everything if c["id"] == SELF), {})
-        self.components = [c for c in everything if c["id"] != SELF]
+        self.me = next((component for component in everything if component["id"] == SELF), {})
+        self.components = [component for component in everything if component["id"] != SELF]
         self.checked = self.checked or online
         self.source_root = str(doc.get("source_root", ""))
         table = self.query_one(DataTable)
         row = table.cursor_row
         table.clear()
-        for c in self.components:
-            table.add_row(*self.cells(c), key=c["id"])
+        for component in self.components:
+            table.add_row(*self.cells(component), key=component["id"])
         if self.components:
             table.move_cursor(row=min(row, len(self.components) - 1))
         self.set_scanning(False, online)
 
-    def cells(self, c: dict) -> tuple:
-        installed = c.get("installed")
-        update = c.get("update") or {}
+    def cells(self, component: dict) -> tuple:
+        installed = component.get("installed")
+        update = component.get("update") or {}
         if installed:
             version = installed.get("version") or "?"
-            via = channel_label(c, installed["channel"])
+            via = channel_label(component, installed["channel"])
         else:
             version, via = "-", Text("not installed", style="dim")
         if not self.checked:
             state: str | Text = ""
         elif not installed:
-            latest = (c.get("latest") or {}).get("release") or {}
+            latest = (component.get("latest") or {}).get("release") or {}
             state = Text(f"latest {latest['value']}", style="dim") if "value" in latest else ""
         elif update.get("state") == "available":
             state = Text(f"{update['to']} available", style="bold")
@@ -317,7 +314,7 @@ class PilotApp(App[None]):
             state = Text("up to date", style="dim")
         else:
             state = Text(update.get("reason") or "?", style="dim")
-        return (c["name"], version, via, state, about(c))
+        return (component["name"], version, via, state, about(component))
 
     def set_status(self, busy: str = "") -> None:
         parts = [self.self_status()]
@@ -327,7 +324,9 @@ class PilotApp(App[None]):
             parts.append(busy + ("" if self.job is None else "  (Esc stops)"))
         elif self.checked:
             n = sum(
-                1 for c in self.components if (c.get("update") or {}).get("state") == "available"
+                1
+                for component in self.components
+                if (component.get("update") or {}).get("state") == "available"
             )
             parts.append(
                 f"{n} update{'s' if n != 1 else ''} available" if n else "no updates found"
@@ -339,7 +338,7 @@ class PilotApp(App[None]):
         """vinoPilot's version, and what p does with it."""
         mine = f"vinoPilot {self.version}" if self.version else "vinoPilot"
         installed = (self.me.get("installed") or {}).get("version")
-        if self.updated and installed and installed != self.version:
+        if self.updated_itself and installed and installed != self.version:
             return f"vinoPilot {installed} installed, p restarts into it"
         update = self.me.get("update") or {}
         if update.get("state") == "available" and self.me.get("installed"):
@@ -373,36 +372,36 @@ class PilotApp(App[None]):
             self.scan(True)
 
     def action_install(self) -> None:
-        if not self.ready() or (c := self.selected()) is None:
+        if not self.ready() or (component := self.selected()) is None:
             return
-        if c.get("installed"):
-            self.notify(f"{c['name']} is already installed; use Update", severity="warning")
+        if component.get("installed"):
+            self.notify(f"{component['name']} is already installed; use Update", severity="warning")
             return
-        channels = c.get("channels") or []
+        channels = component.get("channels") or []
         if not channels:
-            self.notify(f"{c['name']} has nothing to install", severity="warning")
+            self.notify(f"{component['name']} has nothing to install", severity="warning")
             return
         if len(channels) == 1:
-            self.run_job(self.pilot.install(c["id"], channels[0]))
+            self.run_job(self.pilot.install(component["id"], channels[0]))
             return
-        options = [(ch, channel_label(c, ch)) for ch in channels]
+        options = [(ch, channel_label(component, ch)) for ch in channels]
         self.push_screen(
-            ChooseScreen(f"Install {c['name']} from", options),
-            lambda via: via and self.run_job(self.pilot.install(c["id"], via)),
+            ChooseScreen(f"Install {component['name']} from", options),
+            lambda via: via and self.run_job(self.pilot.install(component["id"], via)),
         )
 
     def action_update(self) -> None:
-        if not self.ready() or (c := self.selected()) is None:
+        if not self.ready() or (component := self.selected()) is None:
             return
-        if not c.get("installed"):
-            self.notify(f"{c['name']} isn't installed; use Install", severity="warning")
+        if not component.get("installed"):
+            self.notify(f"{component['name']} isn't installed; use Install", severity="warning")
             return
-        self.run_job(self.pilot.update(c["id"]))
+        self.run_job(self.pilot.update(component["id"]))
 
     def action_pilot(self) -> None:
         """vinoPilot itself: check, then update, then restart."""
         installed = (self.me.get("installed") or {}).get("version")
-        if self.updated and installed and installed != self.version and self.job is None:
+        if self.updated_itself and installed and installed != self.version and self.job is None:
             self.restart = True
             self.exit()
             return
@@ -419,46 +418,51 @@ class PilotApp(App[None]):
             self.run_job(self.pilot.update_all())
 
     def action_uninstall(self) -> None:
-        if not self.ready() or (c := self.selected()) is None:
+        if not self.ready() or (component := self.selected()) is None:
             return
-        installed = c.get("installed")
+        installed = component.get("installed")
         if not installed:
-            self.notify(f"{c['name']} isn't installed", severity="warning")
+            self.notify(f"{component['name']} isn't installed", severity="warning")
             return
-        via = channel_label(c, installed["channel"])
+        via = channel_label(component, installed["channel"])
         self.push_screen(
-            ConfirmScreen(f"Uninstall {c['name']} ({via})?", "y uninstalls, n keeps it"),
-            lambda yes: yes and self.run_job(self.pilot.uninstall(c["id"])),
+            ConfirmScreen(f"Uninstall {component['name']} ({via})?", "y uninstalls, n keeps it"),
+            lambda yes: yes and self.run_job(self.pilot.uninstall(component["id"])),
         )
 
     def action_steps(self) -> None:
-        if self.pilot is None or (c := self.selected()) is None:
+        if self.pilot is None or (component := self.selected()) is None:
             return
         options = [
-            (a, f"{a} ({channel_label(c, ch)})" if (ch := self.channel_for(c, a)) else a)
+            (
+                a,
+                f"{a} ({channel_label(component, ch)})"
+                if (ch := self.channel_for(component, a))
+                else a,
+            )
             for a in ACTIONS
         ]
         self.push_screen(
-            ChooseScreen(f"Show the steps for {c['name']}", options),
-            lambda action: action and self.show_steps(c, action),
+            ChooseScreen(f"Show the steps for {component['name']}", options),
+            lambda action: action and self.show_steps(component, action),
         )
 
-    def channel_for(self, c: dict, action: str) -> str | None:
+    def channel_for(self, component: dict, action: str) -> str | None:
         """The channel `vinopilot steps` would pick: how it's installed, else the first."""
-        installed = c.get("installed")
+        installed = component.get("installed")
         if installed:
             return installed["channel"]
-        channels = c.get("channels") or []
+        channels = component.get("channels") or []
         return channels[0] if channels and action == "install" else None
 
-    def show_steps(self, c: dict, action: str) -> None:
+    def show_steps(self, component: dict, action: str) -> None:
         assert self.pilot is not None
         try:
-            text = self.pilot.steps(c["id"], action)
+            text = self.pilot.steps(component["id"], action)
         except (CommandError, OSError) as e:
             self.log_line(f"✗ {e}")
             return
-        self.push_screen(TextScreen(f"{action} {c['name']}: what would run", text))
+        self.push_screen(TextScreen(f"{action} {component['name']}: what would run", text))
 
     def action_source_root(self) -> None:
         if not self.ready():
@@ -507,7 +511,7 @@ class PilotApp(App[None]):
         if event.outcome == "done":
             self.log_line(f"✓ Done{what}")
             if event.app == SELF:
-                self.updated = True
+                self.updated_itself = True
         elif event.outcome == "stopped":
             self.log_line(f"Stopped{what}")
         else:
@@ -524,7 +528,6 @@ def main() -> None:
     app = PilotApp()
     app.run()
     if app.restart:
-        # The update replaced this script too; start the new one in its place.
         os.execvp("vinopilot-tui", ["vinopilot-tui"])
 
 
