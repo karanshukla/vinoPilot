@@ -13,12 +13,20 @@ use vinopilot_core::detect::{Local, Part, SystemPackage};
 use vinopilot_core::remote::Latest;
 use vinopilot_gui::{Pilot, VERSION};
 
+/// What the installed copy says. A test build is `dev`, which is never offered
+/// an update, so these tests install a numbered one.
+const INSTALLED: &str = env!("CARGO_PKG_VERSION");
+
 fn header(latest: HashMap<Id, Latest>) -> Harness<'static, (Pilot, bool)> {
     header_with(latest, Vec::new())
 }
 
 fn header_with(latest: HashMap<Id, Latest>, parts: Vec<Part>) -> Harness<'static, (Pilot, bool)> {
-    window(support::installed(Channel::Release, VERSION), latest, parts)
+    window(
+        support::installed(Channel::Release, INSTALLED),
+        latest,
+        parts,
+    )
 }
 
 /// The window with vinoPilot itself as `local`.
@@ -52,7 +60,7 @@ fn an_up_to_date_check_says_so() {
     let latest = HashMap::from([(
         Id::App(App::Pilot),
         Latest {
-            release: Some(Ok(format!("v{VERSION}"))),
+            release: Some(Ok(format!("v{INSTALLED}"))),
             ..Default::default()
         },
     )]);
@@ -64,7 +72,7 @@ fn about_shows_how_vinopilot_and_its_commands_are_installed() {
     let part = |command, path: Option<&str>| Part {
         command,
         path: path.map(Into::into),
-        version: path.map(|_| VERSION.to_string()),
+        version: path.map(|_| INSTALLED.to_string()),
     };
     let parts = vec![
         part("vinopilot", Some("/nowhere/.local/bin/vinopilot")),
@@ -77,7 +85,7 @@ fn about_shows_how_vinopilot_and_its_commands_are_installed() {
     h.run();
     h.get_by_label("Installed from");
     h.get_by_label("Not checked yet");
-    h.get_by_label(&format!("/nowhere/.local/bin/vinopilot-gui ({VERSION})"));
+    h.get_by_label(&format!("/nowhere/.local/bin/vinopilot-gui ({INSTALLED})"));
     h.get_by_label("Not installed: uv tool install vinopilot");
 }
 
@@ -89,12 +97,12 @@ fn a_deb_install_updates_from_the_header_like_any_other() {
             packages: vec!["vinopilot".into()],
             remove: "sudo apt remove vinopilot".into(),
         }),
-        ..support::installed(Channel::Deb, VERSION)
+        ..support::installed(Channel::Deb, INSTALLED)
     };
     let parts = vec![Part {
         command: "vinopilot-gui",
         path: Some("/usr/bin/vinopilot-gui".into()),
-        version: Some(VERSION.to_string()),
+        version: Some(INSTALLED.to_string()),
     }];
     let latest = HashMap::from([(
         Id::App(App::Pilot),
@@ -107,6 +115,6 @@ fn a_deb_install_updates_from_the_header_like_any_other() {
     h.get_by_label(&format!("{VERSION} · update to v99.0.0"));
     h.get_by_label("About vinoPilot").click();
     h.run();
-    h.get_by_label("deb package");
-    h.get_by_label(&format!("/usr/bin/vinopilot-gui ({VERSION})"));
+    h.get_by_label(&format!("deb package, {INSTALLED}"));
+    h.get_by_label(&format!("/usr/bin/vinopilot-gui ({INSTALLED})"));
 }

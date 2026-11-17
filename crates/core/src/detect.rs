@@ -23,6 +23,22 @@ pub struct Local {
     pub shadowed: Vec<Shadowed>,
 }
 
+impl Local {
+    /// The installed version as a person reads it: `dev` with the checkout's
+    /// `git describe` after it when there is one (pinned by
+    /// `tests::dev_shows_the_checkouts_describe_and_a_number_stays_alone`).
+    pub fn version_label(&self) -> Option<String> {
+        let version = self.installed.as_ref()?.version.as_deref()?;
+        let describe = self.checkout.as_ref().map(|c| c.describe.as_str());
+        Some(match describe {
+            Some(describe) if version == "dev" && !describe.is_empty() => {
+                format!("dev ({describe})")
+            }
+            _ => version.to_string(),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Shadowed {
     /// `vinosearch`.
@@ -511,14 +527,15 @@ pub fn scan(paths: &Paths) -> HashMap<Id, Local> {
     handles.into_iter().filter_map(|h| h.join().ok()).collect()
 }
 
-/// vinoAuthFace leaves no marker: its release builds are stamped with their
-/// tag, and a checkout's build says `dev`.
-fn authface_channel(version: Option<&str>) -> Channel {
-    if version == Some("dev") {
-        Channel::Source
-    } else {
-        Channel::Release
+/// A binary that says `dev` was built from a checkout, whatever markers sit
+/// beside it: a release or Flatpak build is stamped with its number (pinned by
+/// `tests::a_release_marker_beside_a_dev_binary_is_a_source_build`,
+/// `tests::a_release_marker_beside_a_numbered_binary_is_a_release`).
+fn dev_is_source(mut installed: Installed) -> Installed {
+    if installed.version.as_deref() == Some("dev") {
+        installed.channel = Channel::Source;
     }
+    installed
 }
 
 /// Where vinoAuthFace's installer puts its command, system-wide.
@@ -540,6 +557,10 @@ impl HomeEvidence<'_> {
     /// `id` as installed in the home (or, for vinoAuthFace, under
     /// /usr/local), from what its installer leaves behind.
     fn install(&self, id: Id) -> Option<Installed> {
+        self.by_evidence(id).map(dev_is_source)
+    }
+
+    fn by_evidence(&self, id: Id) -> Option<Installed> {
         match id {
             Id::App(App::Whisper) => self.uv_tool("vinowhisper", "vinowhisper-setup"),
             Id::App(App::Speak) => self.uv_tool("vinospeak", "vinospeak"),
@@ -644,9 +665,10 @@ impl HomeEvidence<'_> {
 
 fn authface(command: &Path) -> Option<Installed> {
     command.exists().then(|| {
-        let version = ask_version(command);
-        let channel = authface_channel(version.as_deref());
-        Installed { channel, version }
+        dev_is_source(Installed {
+            channel: Channel::Release,
+            version: ask_version(command),
+        })
     })
 }
 
@@ -856,14 +878,68 @@ mod tests {
         assert_eq!(authface(&home.join("nowhere")), None);
     }
     #[test]
-    fn a_vinoauthface_that_says_dev_is_a_source_build() {
-        assert_eq!(authface_channel(Some("dev")), Channel::Source);
+    fn a_vinoauthface_with_a_version_or_none_is_a_release() {
+        let home = home_with("authface-12", "12", &["vinoauthface"]);
+        let command = home.join(".local/bin/vinoauthface");
+        assert_eq!(authface(&command), at(Channel::Release, "12"));
+        let silent = home.join(".local/bin/silent");
+        put_command(&silent, "");
+        assert_eq!(authface(&silent).map(|i| i.channel), Some(Channel::Release));
+    }
+
+    /// Every app with a marker, and the command that carries its version.
+    const MARKED: [(App, &str, &str); 3] = [
+        (App::Search, "vinosearch", "vinosearch-upgrade"),
+        (App::Watch, "vinowatch", "vinowatch-upgrade"),
+        (
+            App::OpenEffects,
+            "vinoopeneffects-ctl",
+            "vinoopeneffects-upgrade",
+        ),
+    ];
+
+    #[test]
+    fn a_release_marker_beside_a_dev_binary_is_a_source_build() {
+        for (app, command, marker) in MARKED {
+            let home = home_with("marker-dev", "dev", &[command, marker]);
+            assert_eq!(
+                installed_in(&home, Id::App(app)),
+                at(Channel::Source, "dev")
+            );
+        }
+        let pop = home_with("pop-dev", "dev", &["vinopop"]);
+        pop.mkdir(".local/share/vinopop/app");
+        assert_eq!(
+            installed_in(&pop, Id::App(App::Pop)),
+            at(Channel::Source, "dev")
+        );
+        let ovfetch = home_with("ovfetch-dev", "dev", &["ovfetch"]);
+        assert_eq!(
+            installed_in(&ovfetch, Id::Ovfetch),
+            at(Channel::Source, "dev")
+        );
+        let pilot = home_with("pilot-dev", "dev", &["vinopilot", "vinopilot-upgrade"]);
+        assert_eq!(
+            installed_in(&pilot, Id::App(App::Pilot)),
+            at(Channel::Source, "dev")
+        );
     }
 
     #[test]
-    fn a_vinoauthface_with_a_version_or_none_is_a_release() {
-        assert_eq!(authface_channel(Some("12")), Channel::Release);
-        assert_eq!(authface_channel(None), Channel::Release);
+    fn a_release_marker_beside_a_numbered_binary_is_a_release() {
+        for (app, command, marker) in MARKED {
+            let home = home_with("marker-num", "8.0.0", &[command, marker]);
+            assert_eq!(
+                installed_in(&home, Id::App(app)),
+                at(Channel::Release, "8.0.0")
+            );
+        }
+        let pop = home_with("pop-num", "1.4.0", &["vinopop"]);
+        pop.mkdir(".local/share/vinopop/app");
+        assert_eq!(
+            installed_in(&pop, Id::App(App::Pop)),
+            at(Channel::Release, "1.4.0")
+        );
     }
 
     #[test]
@@ -995,6 +1071,42 @@ mod tests {
         assert_eq!(version_in("ovfetch v0.6.0").as_deref(), Some("0.6.0"));
         assert_eq!(version_in("usage: vinospeak [-h]"), None);
         assert_eq!(version_in(""), None);
+    }
+
+    #[test]
+    fn dev_shows_the_checkouts_describe_and_a_number_stays_alone() {
+        let local = |version: &str, describe: Option<&str>| Local {
+            installed: at(Channel::Source, version),
+            checkout: describe.map(|d| Checkout {
+                path: PathBuf::from("/src/vinoWatch"),
+                describe: d.into(),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            local("dev", Some("v8-9-g1a2b3c4"))
+                .version_label()
+                .as_deref(),
+            Some("dev (v8-9-g1a2b3c4)")
+        );
+        assert_eq!(local("dev", None).version_label().as_deref(), Some("dev"));
+        assert_eq!(
+            local("dev", Some("")).version_label().as_deref(),
+            Some("dev")
+        );
+        assert_eq!(
+            local("8.0.0", Some("v8-9-g1a2b3c4"))
+                .version_label()
+                .as_deref(),
+            Some("8.0.0")
+        );
+        assert_eq!(Local::default().version_label(), None);
+    }
+
+    #[test]
+    fn a_capital_p_vinopop_line_parses_dev_and_numbers() {
+        assert_eq!(version_in("vinoPop dev").as_deref(), Some("dev"));
+        assert_eq!(version_in("vinoPop 1.5.0").as_deref(), Some("1.5.0"));
     }
 
     #[test]

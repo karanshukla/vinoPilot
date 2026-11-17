@@ -12,6 +12,8 @@ pub mod config;
 pub mod detect;
 pub mod job;
 pub mod remote;
+#[cfg(test)]
+mod stamp;
 pub mod status;
 #[cfg(test)]
 mod test_support;
@@ -19,6 +21,15 @@ mod version;
 
 pub use catalog::{Action, Channel, Id};
 pub use config::Config;
+
+/// This build's version: the release's number when release CI stamped it (or
+/// it was built from the registry), `dev` for a build from a checkout. Every
+/// place vinoPilot shows or compares its own version uses it (see build.rs;
+/// pinned by `crates/cli/tests/cli.rs::an_unstamped_build_reports_dev`).
+pub const VERSION: &str = match option_env!("VINOPILOT_STAMP") {
+    Some(version) => version,
+    None => "dev",
+};
 
 /// A `Command` whose `PATH` has `~/.local/bin` and `~/.cargo/bin` in front
 /// when missing: a launcher started from the app menu often lacks them, and

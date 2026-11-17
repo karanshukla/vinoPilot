@@ -177,6 +177,30 @@ mod tests {
     }
 
     #[test]
+    fn a_dev_build_is_never_offered_a_number_on_any_channel() {
+        let latest = Latest {
+            release: Some(Ok("v12".into())),
+            package: Some(Ok("12.0.0".into())),
+            ..Default::default()
+        };
+        for channel in [
+            Channel::Release,
+            Channel::Package,
+            Channel::Deb,
+            Channel::Rpm,
+            Channel::Flatpak,
+        ] {
+            assert!(
+                matches!(
+                    update(Some(&at(channel, "dev")), Some(&latest)),
+                    Update::Unknown { .. }
+                ),
+                "{channel:?}"
+            );
+        }
+    }
+
+    #[test]
     fn checkouts_count_commits_behind() {
         let latest = Latest {
             behind: Some(Ok(3)),

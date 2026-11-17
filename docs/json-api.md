@@ -36,12 +36,13 @@
 
 | Field | Meaning |
 |---|---|
+| `vinopilot` (top level) | this binary's version: the release's number, or `"dev"` for a build from a checkout (pinned by `crates/cli/tests/cli.rs::an_unstamped_build_reports_dev`, `crates/cli/tests/cli.rs::a_release_build_reports_its_version`) |
 | `id` | what the command line takes: `vinowhisper`, `ovfetch`, `vinouserinterface`, `vinopilot` |
 | `channels` | the ways it can be installed, best first: `release`, `source`, `package` (PyPI or crates.io), `flatpak` (the release's Flatpak bundle: vinowhisper and vinosearch) (pinned by `crates/cli/tests/cli.rs::channels_are_listed_best_first`) |
 | `registry` | `"pypi"` or `"crates.io"` where it's published, else `null`. Every component with a `package` channel has one; so does `vinouserinterface`, a library on crates.io that installs only from `source` (pinned by `crates/cli/tests/cli.rs::registry_names_where_a_package_is_published`) |
 | `needs_root` | its actions run through `pkexec` |
-| `installed` | `null`, or how it's installed and its version (`null` when the binary wouldn't say, `"dev"` for a checkout build). `channel` is one of `channels`, or for vinopilot itself also `deb`, `rpm` or `flatpak`: its release's package, which `update` and `uninstall` go through but `install` doesn't offer. A Flatpak's version is its metainfo's newest release, `null` without one |
-| `checkout` | `null`, or the git checkout in the source folder |
+| `installed` | `null`, or how it's installed and its version (`null` when the binary wouldn't say, `"dev"` for a build from a source checkout; an app that says `dev` is always on the `source` channel, whatever release marker sits beside it, and is never offered an update from a version comparison (pinned by `crates/cli/tests/cli.rs::a_dev_binary_beside_a_release_marker_is_a_source_build_with_its_describe`)). `channel` is one of `channels`, or for vinopilot itself also `deb`, `rpm` or `flatpak`: its release's package, which `update` and `uninstall` go through but `install` doesn't offer. A Flatpak's version is its metainfo's newest release, `null` without one |
+| `checkout` | `null`, or the git checkout in the source folder. Its `describe` is what to show beside a `dev` version |
 | `system_package` | `null`, or the distro packages (rpm or deb) that own its commands in `/usr/bin`: `{"kind": "rpm", "packages": ["vinoopeneffects"], "remove": "sudo dnf remove vinoopeneffects"}`. vinopilot doesn't remove these; `remove` is the command for the user to run |
 | `shadowed` | its commands that are in both `~/.local/bin` and `~/.cargo/bin`, say a release install left beside a source build: `[{"command": "vinosearch", "runs": "/home/you/.local/bin/vinosearch", "hidden": "/home/you/.cargo/bin/vinosearch"}]`. `runs` is the one first on `PATH`. Empty when there's one copy (pinned by `crates/cli/tests/cli.rs::a_command_in_both_bins_is_listed_as_shadowed`) |
 | `latest` | only from `check` (pinned by `crates/cli/tests/cli.rs::list_has_no_latest_because_it_stays_offline`). Each lookup is `null` (not applicable), `{"value": ...}` or `{"error": "sentence"}` |

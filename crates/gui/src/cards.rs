@@ -318,7 +318,7 @@ fn distro_tag(ui: &mut egui::Ui, system: &SystemPackage, copied: bool) -> bool {
 /// "1.4.0 · v1.4.1 available", coloured by whether it needs the user.
 fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, looking: bool) {
     let palette = theme::palette(ui.ctx());
-    let Some(Installed { version, .. }) = &local.installed else {
+    let Some(Installed { version: raw, .. }) = &local.installed else {
         widgets::small(
             ui,
             if looking {
@@ -329,7 +329,8 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
         );
         return;
     };
-    let version = version.as_deref().unwrap_or("installed");
+    let label = local.version_label();
+    let version = label.as_deref().unwrap_or("installed");
     let (text, color) = match update {
         Update::Available { to } => (format!("{version} · {to} available"), palette.warn),
         Update::UpToDate => (format!("{version} · up to date"), palette.accent),
@@ -337,7 +338,7 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
         Update::Unknown { reason: None } => (version.to_string(), palette.text),
     };
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
-    if id == Id::App(vino_ui::App::Pilot) && version != VERSION {
+    if id == Id::App(vino_ui::App::Pilot) && raw.as_deref() != Some(VERSION) {
         shown.on_hover_text(format!("This window is {VERSION}"));
     }
 }

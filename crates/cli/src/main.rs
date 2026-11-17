@@ -12,7 +12,7 @@ use vinopilot_core::job::{Env, Job, Outcome};
 use vinopilot_core::status::{self, Update};
 use vinopilot_core::{Config, detect, remote};
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+use vinopilot_core::VERSION;
 
 const HELP: &str = "\
 vinopilot: install, update and uninstall the vinoPilot apps
@@ -200,8 +200,21 @@ fn print_document(config: &Config, components: &[status::Component]) {
 }
 
 fn print_table(components: &[status::Component], online: bool) {
+    let label = |component: &status::Component| match &component.local.installed {
+        Some(_) => component
+            .local
+            .version_label()
+            .unwrap_or_else(|| "?".into()),
+        None => "-".into(),
+    };
+    let width = components
+        .iter()
+        .map(|c| label(c).len())
+        .max()
+        .unwrap_or(0)
+        .max(12);
     println!(
-        "{:<18} {:<12} {:<10} {}",
+        "{:<18} {:<width$} {:<10} {}",
         "APP",
         "VERSION",
         "VIA",
@@ -210,7 +223,7 @@ fn print_table(components: &[status::Component], online: bool) {
     for component in components {
         let (version, via) = match &component.local.installed {
             Some(installed) => (
-                installed.version.clone().unwrap_or_else(|| "?".into()),
+                label(component),
                 installed
                     .channel
                     .label(Id::parse(&component.id).unwrap())
@@ -224,7 +237,7 @@ fn print_table(components: &[status::Component], online: bool) {
             component.local.installed.is_some(),
         );
         println!(
-            "{:<18} {:<12} {:<10} {}",
+            "{:<18} {:<width$} {:<10} {}",
             component.name, version, via, update
         );
     }

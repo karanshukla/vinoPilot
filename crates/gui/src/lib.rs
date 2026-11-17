@@ -26,7 +26,7 @@ use cards::{CARDS, PAGE_MAX};
 use header::{NARROW, header_width};
 use launcher::{Entry, Launcher, job_progress, percent};
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub use vinopilot_core::VERSION;
 
 /// What a local scan finds: each component, and vinoPilot's own commands.
 type Scan = (HashMap<Id, Local>, Vec<Part>);

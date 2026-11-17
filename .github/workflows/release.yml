@@ -56,7 +56,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
       - name: Build and package
         run: |
-          .github/package-release.sh
+          # The stamp: the binaries print this version, the Flatpak, .deb and
+          # .rpm repack them unchanged.
+          VINOPILOT_VERSION="${GITHUB_REF_NAME#v}" .github/package-release.sh
           cp notes.md dist/
       - name: Smoke-test the tarball, the .deb and the .rpm
         run: |
