@@ -5,6 +5,9 @@
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Sender, channel};
+use std::time::Duration;
+
+use vinopilot_core::job::Steps;
 
 use zbus::zvariant::Value;
 
@@ -12,6 +15,34 @@ use crate::desktop::APP_ID;
 
 const PATH: &str = "/io/github/karanshukla/vinopilot/launcher";
 const IFACE: &str = "com.canonical.Unity.LauncherEntry";
+
+/// A step starts this far into its share of the bar, so the bar shows: KDE
+/// draws nothing at 0.
+const STEP_FLOOR: f64 = 0.05;
+/// A running step never fills more of its share than this.
+const STEP_CAP: f64 = 0.9;
+/// How long a step takes to get about two thirds of the way from the floor
+/// to the cap. Installers don't report progress, so time stands in for it.
+const STEP_PACE: Duration = Duration::from_secs(30);
+
+/// The share of a running step's part of the bar after `running_for`:
+/// from the floor, slowing toward the cap (pinned by
+/// `tests::a_step_starts_visible_and_never_fills_while_it_runs`).
+fn step_share(running_for: Duration) -> f64 {
+    let pace = running_for.as_secs_f64() / STEP_PACE.as_secs_f64();
+    STEP_FLOOR + (STEP_CAP - STEP_FLOOR) * (1.0 - (-pace).exp())
+}
+
+/// A running job's fraction: the steps done, and the running step's share.
+pub fn job_progress(steps: Steps) -> f64 {
+    let done = steps.done as f64 + step_share(steps.running_for);
+    (done / steps.of.max(1) as f64).min(1.0)
+}
+
+/// Whole percents, so a bar creeping each frame isn't a signal each frame.
+pub fn percent(progress: f64) -> f64 {
+    (progress * 100.0).round() / 100.0
+}
 
 /// What the icon shows.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -71,6 +102,25 @@ fn props(entry: Entry) -> HashMap<&'static str, Value<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_step_starts_visible_and_never_fills_while_it_runs() {
+        assert_eq!(step_share(Duration::ZERO), STEP_FLOOR);
+        assert!(step_share(STEP_PACE) > 0.5);
+        assert!(step_share(Duration::from_secs(3600)) <= STEP_CAP);
+    }
+
+    #[test]
+    fn a_job_counts_its_finished_steps_whole() {
+        let steps = |done, secs| Steps {
+            done,
+            of: 2,
+            running_for: Duration::from_secs(secs),
+        };
+        assert_eq!(job_progress(steps(0, 0)), STEP_FLOOR / 2.0);
+        assert_eq!(job_progress(steps(1, 0)), (1.0 + STEP_FLOOR) / 2.0);
+        assert!(job_progress(steps(1, 3600)) < 1.0);
+    }
 
     #[test]
     fn a_hidden_bar_and_badge_are_sent_as_not_visible() {

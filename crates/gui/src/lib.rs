@@ -24,7 +24,7 @@ mod settings;
 
 use cards::{CARDS, PAGE_MAX};
 use header::{NARROW, header_width};
-use launcher::{Entry, Launcher};
+use launcher::{Entry, Launcher, job_progress, percent};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -225,10 +225,11 @@ impl Pilot {
     /// counts what Update all and the header would update (pinned by
     /// `tests::the_badge_counts_the_cards_and_vinopilot_with_an_update`).
     fn launcher_entry(&self) -> Entry {
-        let job = self.job.as_ref().filter(|j| j.running()).map(|j| {
-            let (done, of) = j.steps();
-            done as f64 / of.max(1) as f64
-        });
+        let job = self
+            .job
+            .as_ref()
+            .filter(|j| j.running())
+            .map(|j| job_progress(j.steps()));
         let progress = if self.batch > 0 && (job.is_some() || !self.queue.is_empty()) {
             let left = self.queue.len() + usize::from(job.is_some());
             let done = self.batch.saturating_sub(left) as f64 + job.unwrap_or(0.0);
@@ -242,7 +243,7 @@ impl Pilot {
         );
         let count = self.updatable().len() + usize::from(pilot);
         Entry {
-            progress,
+            progress: progress.map(percent),
             count: (count > 0).then_some(count as i64),
         }
     }
@@ -378,6 +379,11 @@ impl eframe::App for Pilot {
         let entry = self.launcher_entry();
         if let Some(launcher) = &mut self.launcher {
             launcher.show(entry);
+            // The bar creeps with time, not only with output.
+            if entry.progress.is_some() {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_secs(1));
+            }
         }
         if self.app_title_bar {
             vino_ui::window::edges(ui);
@@ -434,6 +440,10 @@ mod tests {
         Pilot::with(config, local, latest)
     }
 
+    fn between(progress: Option<f64>, low: f64, high: f64) -> bool {
+        progress.is_some_and(|p| (low..=high).contains(&p))
+    }
+
     /// A job whose first step is done and whose second runs until stopped.
     fn halfway() -> Job {
         let step = |script: &str| catalog::Step {
@@ -454,7 +464,7 @@ mod tests {
             ),
             Arc::new(|_| {}),
         );
-        while job.steps().0 == 0 {
+        while job.steps().done == 0 {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         job
@@ -471,7 +481,8 @@ mod tests {
     fn a_single_job_fills_the_bar_by_its_steps() {
         let mut p = pilot(&[]);
         p.job = Some(halfway());
-        assert_eq!(p.launcher_entry().progress, Some(0.5));
+        // One of two done, and the second just started.
+        assert!(between(p.launcher_entry().progress, 0.52, 0.56));
         p.job.as_ref().unwrap().stop();
         p.job.as_ref().unwrap().wait();
         assert_eq!(p.launcher_entry().progress, None);
@@ -484,10 +495,10 @@ mod tests {
         p.queue = vec![Id::Ovfetch, Id::Ui, Id::App(vino_ui::App::Pop)];
         // Between the first and second: one of four done.
         assert_eq!(p.launcher_entry().progress, Some(0.25));
-        // The second, halfway: one and a half of four.
+        // The second, one of its two steps done.
         p.queue.remove(0);
         p.job = Some(halfway());
-        assert_eq!(p.launcher_entry().progress, Some(0.375));
+        assert!(between(p.launcher_entry().progress, 0.37, 0.40));
         p.job.as_ref().unwrap().stop();
     }
 

@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::catalog::{Action, Channel, Id, OffBranch, Step};
 use crate::detect::Paths;
@@ -46,6 +46,16 @@ struct Shared {
     /// Steps finished, of `steps`.
     done: usize,
     steps: usize,
+    step_started: Option<Instant>,
+}
+
+/// How far along a job is, for the launcher's progress bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Steps {
+    pub done: usize,
+    pub of: usize,
+    /// How long the step after `done` has been running.
+    pub running_for: Duration,
 }
 
 pub struct Job {
@@ -226,11 +236,13 @@ impl Job {
         }
     }
 
-    /// Steps finished and steps in all: how far along the job is, for the
-    /// launcher's progress bar.
-    pub fn steps(&self) -> (usize, usize) {
+    pub fn steps(&self) -> Steps {
         let s = self.shared.lock().unwrap();
-        (s.done, s.steps)
+        Steps {
+            done: s.done,
+            of: s.steps,
+            running_for: s.step_started.map_or(Duration::ZERO, |at| at.elapsed()),
+        }
     }
 
     pub fn running(&self) -> bool {
@@ -266,7 +278,10 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
         if let Some(err) = child.stderr.take() {
             pump(shared.clone(), err, notify.clone());
         }
-        shared.lock().unwrap().child = Some(child);
+        let mut s = shared.lock().unwrap();
+        s.child = Some(child);
+        s.step_started = Some(Instant::now());
+        drop(s);
         let status = loop {
             let mut s = shared.lock().unwrap();
             let Some(child) = s.child.as_mut() else {
@@ -408,7 +423,8 @@ mod tests {
             notify,
         );
         assert_eq!(job.wait(), Outcome::Done);
-        assert_eq!(job.steps(), (2, 2));
+        let steps = job.steps();
+        assert_eq!((steps.done, steps.of), (2, 2));
     }
 
     fn lines(text: &[&str]) -> Vec<String> {
