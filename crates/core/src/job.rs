@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::catalog::{Action, Channel, Id, OffBranch, Step};
 use crate::detect::Paths;
@@ -43,6 +43,19 @@ struct Shared {
     outcome: Option<Outcome>,
     child: Option<Child>,
     stop: bool,
+    /// Steps finished, of `steps`.
+    done: usize,
+    steps: usize,
+    step_started: Option<Instant>,
+}
+
+/// How far along a job is, for the launcher's progress bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Steps {
+    pub done: usize,
+    pub of: usize,
+    /// How long the step after `done` has been running.
+    pub running_for: Duration,
 }
 
 pub struct Job {
@@ -183,6 +196,7 @@ impl Job {
     ) -> Self {
         let shared = Arc::new(Mutex::new(Shared {
             outcome: Some(Outcome::Running),
+            steps: steps.len(),
             ..Default::default()
         }));
         let job = Job {
@@ -222,6 +236,15 @@ impl Job {
         }
     }
 
+    pub fn steps(&self) -> Steps {
+        let s = self.shared.lock().unwrap();
+        Steps {
+            done: s.done,
+            of: s.steps,
+            running_for: s.step_started.map_or(Duration::ZERO, |at| at.elapsed()),
+        }
+    }
+
     pub fn running(&self) -> bool {
         self.outcome() == Outcome::Running
     }
@@ -255,7 +278,10 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
         if let Some(err) = child.stderr.take() {
             pump(shared.clone(), err, notify.clone());
         }
-        shared.lock().unwrap().child = Some(child);
+        let mut s = shared.lock().unwrap();
+        s.child = Some(child);
+        s.step_started = Some(Instant::now());
+        drop(s);
         let status = loop {
             let mut s = shared.lock().unwrap();
             let Some(child) = s.child.as_mut() else {
@@ -291,6 +317,7 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
                 failure_reason(&lines).unwrap_or_else(|| format!("exited with {status}")),
             );
         }
+        shared.lock().unwrap().done += 1;
     }
     Outcome::Done
 }
@@ -381,6 +408,23 @@ mod tests {
             .find(|(name, _)| *name == "CHECKOUT")
             .and_then(|(_, value)| value);
         assert_eq!(checkout, Some("/src/app".as_ref()));
+    }
+
+    #[test]
+    fn a_job_counts_the_steps_it_has_finished() {
+        let notify: Notify = Arc::new(|_| {});
+        let steps = vec![step(false), step(false)];
+        let job = Job::start(
+            Id::Ovfetch,
+            Channel::Release,
+            Action::Update,
+            steps,
+            env(),
+            notify,
+        );
+        assert_eq!(job.wait(), Outcome::Done);
+        let steps = job.steps();
+        assert_eq!((steps.done, steps.of), (2, 2));
     }
 
     fn lines(text: &[&str]) -> Vec<String> {

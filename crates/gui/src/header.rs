@@ -101,7 +101,7 @@ impl Pilot {
                     .on_hover_text(format!("Update vinoPilot to {to}. {how}."))
                     .clicked()
                 {
-                    self.queue.clear();
+                    self.end_batch();
                     self.start(
                         &ctx,
                         Id::App(vino_ui::App::Pilot),
@@ -234,7 +234,7 @@ impl Pilot {
         let rtl = ui.layout().main_dir() == egui::Direction::RightToLeft;
         let updatable = self.updatable();
         let busy = self.busy();
-        let update_all = |ui: &mut egui::Ui, queue: &mut Vec<Id>| {
+        let update_all = |ui: &mut egui::Ui, queue: &mut Vec<Id>, batch: &mut usize| {
             ui.add_enabled_ui(!busy, |ui| {
                 if !updatable.is_empty()
                     && ui
@@ -242,11 +242,12 @@ impl Pilot {
                         .clicked()
                 {
                     *queue = updatable.clone();
+                    *batch = updatable.len();
                 }
             });
         };
         if rtl {
-            update_all(ui, &mut self.queue);
+            update_all(ui, &mut self.queue, &mut self.batch);
         }
         if self.checking.is_some() {
             widgets::chip(ui, ChipKind::Neutral, "Checking…");
@@ -262,7 +263,7 @@ impl Pilot {
             self.check(&ctx);
         }
         if !rtl {
-            update_all(ui, &mut self.queue);
+            update_all(ui, &mut self.queue, &mut self.batch);
         }
     }
 }

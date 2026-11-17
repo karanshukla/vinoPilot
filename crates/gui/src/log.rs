@@ -43,6 +43,7 @@ impl Pilot {
                     if ui.add(Button::secondary("Stop").small()).clicked() {
                         job.stop();
                         self.queue.clear();
+                        self.batch = 0;
                     }
                 } else if ui.add(Button::ghost("Close").small()).clicked() {
                     close = true;
@@ -51,6 +52,14 @@ impl Pilot {
         });
         if let Outcome::Failed(why) = &outcome {
             widgets::banner(ui, Tone::Error, why, |_| {});
+        }
+        if self.close_refused.is_some() && outcome == Outcome::Running {
+            widgets::banner(
+                ui,
+                Tone::Warn,
+                "vinoPilot stays open until this finishes. Stop it first to close now.",
+                |_| {},
+            );
         }
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])

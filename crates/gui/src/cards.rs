@@ -117,7 +117,7 @@ impl Pilot {
             self.copied = Some((id, now));
         }
         if let Some((channel, action)) = outcome.intent {
-            self.queue.clear();
+            self.end_batch();
             self.start(&ctx, id, channel, action);
         }
     }
