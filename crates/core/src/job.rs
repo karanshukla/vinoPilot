@@ -43,6 +43,9 @@ struct Shared {
     outcome: Option<Outcome>,
     child: Option<Child>,
     stop: bool,
+    /// Steps finished, of `steps`.
+    done: usize,
+    steps: usize,
 }
 
 pub struct Job {
@@ -178,6 +181,7 @@ impl Job {
     ) -> Self {
         let shared = Arc::new(Mutex::new(Shared {
             outcome: Some(Outcome::Running),
+            steps: steps.len(),
             ..Default::default()
         }));
         let job = Job {
@@ -215,6 +219,13 @@ impl Job {
                 done => return done,
             }
         }
+    }
+
+    /// Steps finished and steps in all: how far along the job is, for the
+    /// launcher's progress bar.
+    pub fn steps(&self) -> (usize, usize) {
+        let s = self.shared.lock().unwrap();
+        (s.done, s.steps)
     }
 
     pub fn running(&self) -> bool {
@@ -286,6 +297,7 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
                 failure_reason(&lines).unwrap_or_else(|| format!("exited with {status}")),
             );
         }
+        shared.lock().unwrap().done += 1;
     }
     Outcome::Done
 }
@@ -353,6 +365,22 @@ mod tests {
             .find(|(name, _)| *name == "CHECKOUT")
             .and_then(|(_, value)| value);
         assert_eq!(checkout, Some("/src/app".as_ref()));
+    }
+
+    #[test]
+    fn a_job_counts_the_steps_it_has_finished() {
+        let notify: Notify = Arc::new(|_| {});
+        let steps = vec![step(false), step(false)];
+        let job = Job::start(
+            Id::Ovfetch,
+            Channel::Release,
+            Action::Update,
+            steps,
+            env(),
+            notify,
+        );
+        assert_eq!(job.wait(), Outcome::Done);
+        assert_eq!(job.steps(), (2, 2));
     }
 
     fn lines(text: &[&str]) -> Vec<String> {

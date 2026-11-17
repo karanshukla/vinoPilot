@@ -16,6 +16,9 @@ use vinopilot_core::status::{self, Update};
 use vinopilot_core::{Config, config, detect, remote};
 
 pub mod desktop;
+pub mod launcher;
+
+use launcher::{Entry, Launcher};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -68,6 +71,12 @@ pub struct Pilot {
     job_settled: bool,
     /// Components `Update all` still has to do, in order.
     queue: Vec<Id>,
+    /// How many `Update all` started with; 0 for a single job.
+    batch: usize,
+    /// The icon in the desktop's launcher; none in the tests.
+    launcher: Option<Launcher>,
+    /// When closing was last refused because a job was running.
+    close_refused: Option<f64>,
     focused: bool,
     /// The card whose remove command was just copied, and when.
     copied: Option<(Id, f64)>,
@@ -84,6 +93,7 @@ impl Pilot {
     pub fn new(ctx: &egui::Context) -> Self {
         let mut pilot = Pilot::with(Config::load(), HashMap::new(), HashMap::new());
         pilot.flatpak = std::env::current_exe().is_ok_and(|exe| in_flatpak(&exe));
+        pilot.launcher = Some(Launcher::new());
         pilot.rescan(ctx);
         pilot
     }
@@ -104,6 +114,9 @@ impl Pilot {
             job: None,
             job_settled: true,
             queue: Vec::new(),
+            batch: 0,
+            launcher: None,
+            close_refused: None,
             focused: false,
             copied: None,
             flatpak: false,
@@ -182,6 +195,50 @@ impl Pilot {
             .collect()
     }
 
+    /// Update all is over, or was never on.
+    fn end_batch(&mut self) {
+        self.queue.clear();
+        self.batch = 0;
+    }
+
+    /// The launcher icon's bar and badge. The bar is the steps done of the
+    /// running job, and with Update all, the components done of all of
+    /// them. The badge counts what Update all and the header would update.
+    fn launcher_entry(&self) -> Entry {
+        let job = self.job.as_ref().filter(|j| j.running()).map(|j| {
+            let (done, of) = j.steps();
+            done as f64 / of.max(1) as f64
+        });
+        let progress = if self.batch > 0 && (job.is_some() || !self.queue.is_empty()) {
+            let left = self.queue.len() + usize::from(job.is_some());
+            let done = self.batch.saturating_sub(left) as f64 + job.unwrap_or(0.0);
+            Some(done / self.batch as f64)
+        } else {
+            job
+        };
+        let pilot = matches!(
+            self.update(Id::App(vino_ui::App::Pilot)),
+            Update::Available { .. }
+        );
+        let count = self.updatable().len() + usize::from(pilot);
+        Entry {
+            progress,
+            count: (count > 0).then_some(count as i64),
+        }
+    }
+
+    /// Keeps the window open while a job runs: closing then would leave an
+    /// install half done.
+    fn refuse_close_while_busy(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested()) && self.busy() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.close_refused = Some(ctx.input(|i| i.time));
+        }
+        if !self.busy() {
+            self.close_refused = None;
+        }
+    }
+
     /// Takes whatever the background threads have finished.
     fn poll(&mut self, ctx: &egui::Context) {
         if let Some((found, parts)) = self.scanning.as_ref().and_then(|rx| rx.try_recv().ok()) {
@@ -197,7 +254,7 @@ impl Pilot {
         if !self.job_settled && finished.as_ref().is_some_and(|o| *o != Outcome::Running) {
             self.job_settled = true;
             if finished != Some(Outcome::Done) {
-                self.queue.clear();
+                self.end_batch();
             }
             // A checkout may have moved, so its "behind" is stale too.
             if self
@@ -307,7 +364,7 @@ impl Pilot {
                     .on_hover_text(format!("Update vinoPilot to {to}. {how}."))
                     .clicked()
                 {
-                    self.queue.clear();
+                    self.end_batch();
                     self.start(
                         &ctx,
                         Id::App(vino_ui::App::Pilot),
@@ -444,7 +501,7 @@ impl Pilot {
         let rtl = ui.layout().main_dir() == egui::Direction::RightToLeft;
         let updatable = self.updatable();
         let busy = self.busy();
-        let update_all = |ui: &mut egui::Ui, queue: &mut Vec<Id>| {
+        let update_all = |ui: &mut egui::Ui, queue: &mut Vec<Id>, batch: &mut usize| {
             ui.add_enabled_ui(!busy, |ui| {
                 if !updatable.is_empty()
                     && ui
@@ -452,11 +509,12 @@ impl Pilot {
                         .clicked()
                 {
                     *queue = updatable.clone();
+                    *batch = updatable.len();
                 }
             });
         };
         if rtl {
-            update_all(ui, &mut self.queue);
+            update_all(ui, &mut self.queue, &mut self.batch);
         }
         if self.checking.is_some() {
             widgets::chip(ui, ChipKind::Neutral, "Checking…");
@@ -472,7 +530,7 @@ impl Pilot {
             self.check(&ctx);
         }
         if !rtl {
-            update_all(ui, &mut self.queue);
+            update_all(ui, &mut self.queue, &mut self.batch);
         }
     }
 
@@ -645,7 +703,7 @@ impl Pilot {
             self.copied = Some((id, now));
         }
         if let Some((channel, action)) = intent {
-            self.queue.clear();
+            self.end_batch();
             self.start(&ctx, id, channel, action);
         }
     }
@@ -717,6 +775,7 @@ impl Pilot {
                     if ui.add(Button::secondary("Stop").small()).clicked() {
                         job.stop();
                         self.queue.clear();
+                        self.batch = 0;
                     }
                 } else if ui.add(Button::ghost("Close").small()).clicked() {
                     close = true;
@@ -725,6 +784,14 @@ impl Pilot {
         });
         if let Outcome::Failed(why) = &outcome {
             widgets::banner(ui, Tone::Error, why, |_| {});
+        }
+        if self.close_refused.is_some() && outcome == Outcome::Running {
+            widgets::banner(
+                ui,
+                Tone::Warn,
+                "vinoPilot stays open until this finishes. Stop it first to close now.",
+                |_| {},
+            );
         }
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -743,6 +810,7 @@ impl Pilot {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll(&ctx);
+        self.refuse_close_while_busy(&ctx);
         let p = theme::palette(&ctx);
 
         if self.job.is_some() {
@@ -940,6 +1008,10 @@ impl eframe::App for Pilot {
         }
         self.focused = focused;
         Pilot::ui(self, ui);
+        let entry = self.launcher_entry();
+        if let Some(launcher) = &mut self.launcher {
+            launcher.show(entry);
+        }
         if self.app_title_bar {
             vino_ui::window::edges(ui);
         }
@@ -966,5 +1038,116 @@ mod tests {
         }
         assert!(!in_flatpak(Path::new("/usr/bin/vinopilot-gui")));
         assert!(!in_flatpak(Path::new("/home/k/app/vinopilot-gui")));
+    }
+
+    fn installed(version: &str) -> Local {
+        Local {
+            installed: Some(Installed {
+                channel: Channel::Release,
+                version: Some(version.into()),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn newer() -> Latest {
+        Latest {
+            release: Some(Ok("v99.0.0".into())),
+            ..Default::default()
+        }
+    }
+
+    fn pilot(ids: &[Id]) -> Pilot {
+        let local = ids.iter().map(|id| (*id, installed("1.0.0"))).collect();
+        let latest = ids.iter().map(|id| (*id, newer())).collect();
+        let config = Config {
+            source_root: "/nowhere".into(),
+        };
+        Pilot::with(config, local, latest)
+    }
+
+    /// A job whose first step is done and whose second runs until stopped.
+    fn halfway() -> Job {
+        let step = |script: &str| catalog::Step {
+            script: script.into(),
+            root: false,
+        };
+        let job = Job::start(
+            Id::Ovfetch,
+            Channel::Release,
+            Action::Update,
+            vec![step("true"), step("sleep 30")],
+            Env::for_id(
+                Id::Ovfetch,
+                &Config {
+                    source_root: "/nowhere".into(),
+                }
+                .paths(),
+            ),
+            Arc::new(|_| {}),
+        );
+        while job.steps().0 == 0 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        job
+    }
+
+    #[test]
+    fn the_badge_counts_the_cards_and_vinopilot_with_an_update() {
+        let ids = [Id::Ovfetch, Id::Ui, Id::App(vino_ui::App::Pilot)];
+        assert_eq!(pilot(&ids).launcher_entry().count, Some(3));
+        assert_eq!(pilot(&[]).launcher_entry(), Entry::default());
+    }
+
+    #[test]
+    fn a_single_job_fills_the_bar_by_its_steps() {
+        let mut p = pilot(&[]);
+        p.job = Some(halfway());
+        assert_eq!(p.launcher_entry().progress, Some(0.5));
+        p.job.as_ref().unwrap().stop();
+        p.job.as_ref().unwrap().wait();
+        assert_eq!(p.launcher_entry().progress, None);
+    }
+
+    #[test]
+    fn update_all_fills_the_bar_by_components_then_steps() {
+        let mut p = pilot(&[]);
+        p.batch = 4;
+        p.queue = vec![Id::Ovfetch, Id::Ui, Id::App(vino_ui::App::Pop)];
+        // Between the first and second: one of four done.
+        assert_eq!(p.launcher_entry().progress, Some(0.25));
+        // The second, halfway: one and a half of four.
+        p.queue.remove(0);
+        p.job = Some(halfway());
+        assert_eq!(p.launcher_entry().progress, Some(0.375));
+        p.job.as_ref().unwrap().stop();
+    }
+
+    fn close(ctx: &egui::Context, pilot: &mut Pilot) -> bool {
+        let mut input = egui::RawInput::default();
+        input
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .events
+            .push(egui::ViewportEvent::Close);
+        let mut out = ctx.run_ui(input, |ui| pilot.ui(ui));
+        out.textures_delta.clear();
+        !out.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .contains(&egui::ViewportCommand::CancelClose)
+    }
+
+    #[test]
+    fn the_window_wont_close_while_a_job_runs() {
+        let ctx = egui::Context::default();
+        let mut p = pilot(&[]);
+        assert!(close(&ctx, &mut p));
+        p.job = Some(halfway());
+        assert!(!close(&ctx, &mut p));
+        assert!(p.close_refused.is_some());
+        p.job.as_ref().unwrap().stop();
+        p.job.as_ref().unwrap().wait();
+        assert!(close(&ctx, &mut p));
     }
 }
