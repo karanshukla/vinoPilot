@@ -610,12 +610,20 @@ impl HomeEvidence<'_> {
     /// Without a receipt it isn't uv's: the marker says (pinned by
     /// `tests::a_uv_receipt_decides_over_the_upgrade_script`,
     /// `tests::without_a_uv_receipt_the_upgrade_script_and_the_binary_decide`).
+    /// uv's list has the package's version; a source build's command says
+    /// `dev`, so that is asked instead (pinned by
+    /// `tests::a_uv_tool_from_a_checkout_is_dev_whatever_its_package_says`).
     fn uv_tool(&self, tool: &str, command: &str) -> Option<Installed> {
         match self.uv_receipt {
-            Some(receipt) => Some(Installed {
-                channel: parse_uv_receipt(receipt),
-                version: self.uv_list.get(tool).cloned(),
-            }),
+            Some(receipt) => {
+                let channel = parse_uv_receipt(receipt);
+                let listed = || self.uv_list.get(tool).cloned();
+                let version = match channel {
+                    Channel::Source => ask_version(&self.paths.local_bin(command)).or_else(listed),
+                    _ => listed(),
+                };
+                Some(Installed { channel, version })
+            }
             None => self.marked(&format!("{tool}-upgrade"), command),
         }
     }
@@ -834,6 +842,20 @@ mod tests {
             Some((&uv_list, pypi)),
         );
         assert_eq!(found, at(Channel::Package, "0.5.1"));
+    }
+
+    #[test]
+    fn a_uv_tool_from_a_checkout_is_dev_whatever_its_package_says() {
+        let home = home_with("uvdev", "dev", &["vinospeak"]);
+        let uv_list = HashMap::from([("vinospeak".to_string(), "0.9.0".to_string())]);
+        let dir = r#"requirements = [{ name = "vinospeak", directory = "/home/k/vinoSpeak" }]"#;
+        let found = installed_with(
+            &home,
+            Id::App(App::Speak),
+            &HashMap::new(),
+            Some((&uv_list, dir)),
+        );
+        assert_eq!(found, at(Channel::Source, "dev"));
     }
 
     #[test]
