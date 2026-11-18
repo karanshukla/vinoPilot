@@ -5,6 +5,13 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-11-17
+
+### Bug Fixes
+
+- An app installed as a uv tool from a checkout (vinoSpeak, vinoWhisper) shows `dev (git describe)`, not the version in its package metadata: vinoPilot asks the command, as it does for every other source build.
+- vinoAuthFace's new logo in the About page and app list (vino-ui 0.5.1).
+
 ## [0.6.0] - 2026-11-17
 
 ### Features

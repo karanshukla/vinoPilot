@@ -62,6 +62,14 @@
   </provides>
   <!-- Newest first. release.yml checks the tag has its line here. -->
   <releases>
+    <release version="0.6.1" date="2026-11-17">
+      <description>
+        <ul>
+          <li>A uv tool installed from a checkout shows as a dev build</li>
+          <li>vinoAuthFace's new logo</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-17">
       <description>
         <ul>
