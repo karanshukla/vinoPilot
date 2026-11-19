@@ -93,14 +93,20 @@ fn kept_upgrade_or(installer: &str, slug: &str, run_with: RunWith) -> String {
 }
 
 /// A release's Flatpak bundle: checked, then installed over the old one,
-/// with `$APP_ID` and `$ASSET` (the bundle's name in the release) set.
+/// with `$APP_ID`, `$ASSET` (the bundle's name in the release) and `$MODELS`
+/// (where the app keeps its models under its data, as natively) set.
 fn flatpak_bundle(id: Id, app_id: &str, action: Action) -> Vec<Step> {
     let body = match action {
         Install | Update => FLATPAK_INSTALL,
         Uninstall => FLATPAK_UNINSTALL,
     };
+    let models = match id {
+        Id::App(App::Whisper) => "vinowhisper/models",
+        Id::App(App::Search) => "vinosearch/models",
+        _ => "",
+    };
     as_user(&format!(
-        "{PACKAGE}APP_ID={app_id}\nASSET={}-x86_64.flatpak\n{body}",
+        "{PACKAGE}APP_ID={app_id}\nMODELS={models}\nASSET={}-x86_64.flatpak\n{body}",
         id.slug()
     ))
 }

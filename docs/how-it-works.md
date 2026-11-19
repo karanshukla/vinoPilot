@@ -13,7 +13,7 @@ vinoPilot doesn't install anything itself. Each app has its own hash-checked ins
 
 The source folder is `~/Development` if you have one, else `~/src`. Change it in the window or with `vinopilot config source_root DIR`.
 
-Uninstalling a Flatpak leaves the app's data in `~/.var/app`.
+Uninstalling a Flatpak deletes its models and cache and leaves your data and settings in `~/.var/app`.
 
 ### A checkout on another branch
 
@@ -96,4 +96,4 @@ A system-wide Flatpak goes through `as_root`, not Flatpak's own polkit prompt. F
 
 A bundle with a newer commit installs over the old one. The same commit is an error to Flatpak, `--reinstall` or not (Flatpak 1.14, checked 2026-11-09), and vinoPilot reports it as nothing to do. A running window keeps its files until it closes: Flatpak removes a deployment that's in use afterwards.
 
-Uninstalling a Flatpak leaves `~/.var/app/<app id>` alone. What the app keeps there is the user's to delete.
+Uninstalling a Flatpak also deletes what a native uninstall would: the app's models (`~/.var/app/<app id>/data/<app>/models`) and its cache (`~/.var/app/<app id>/cache`). The rest of `~/.var/app/<app id>` (transcripts, the index, settings) stays. Removing the Flatpak from Discover, GNOME Software or `flatpak uninstall` yourself doesn't run this: Flatpak has no uninstall hook, so the models stay there unless you pick its "delete data" option or pass `--delete-data`, which deletes your data too.

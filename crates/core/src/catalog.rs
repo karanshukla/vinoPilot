@@ -285,7 +285,7 @@ pub fn uninstall_note(id: Id, channel: Channel) -> String {
         && id != Id::App(App::Pilot)
     {
         return format!(
-            "Removes the app. Its downloaded models, your data and settings stay in ~/.var/app/{app_id}."
+            "Removes the app and its downloaded models. Your data and settings stay in ~/.var/app/{app_id}."
         );
     }
     let what = match id {

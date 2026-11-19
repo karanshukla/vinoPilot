@@ -298,7 +298,13 @@ else
     esac
 fi"#;
 
-/// Leaves `~/.var/app/$APP_ID` alone: what the app keeps there is the
-/// user's to delete.
+/// Then deletes what a native uninstall deletes: the app's models
+/// (`$MODELS`, under its data) and its cache. Flatpak keeps
+/// `~/.var/app/$APP_ID`, and the user's data and settings there stay (pinned
+/// by `catalog::tests::a_flatpak_uninstall_deletes_its_models_and_cache_and_keeps_your_data`).
 pub(super) const FLATPAK_UNINSTALL: &str = r#"need flatpak "it's what this was installed with"
-scoped_flatpak uninstall -y "$APP_ID""#;
+scoped_flatpak uninstall -y "$APP_ID"
+kept="$HOME/.var/app/$APP_ID"
+for d in ${MODELS:+"$kept/data/$MODELS"} "$kept/cache"; do
+    if [ -e "$d" ]; then rm -rf -- "$d" && echo "removed $d"; fi
+done"#;
