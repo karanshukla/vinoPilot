@@ -271,6 +271,85 @@ fn a_flatpak_never_runs_the_homes_upgrade_script() {
     }
 }
 
+/// Uninstalling a Flatpak deletes its models and cache, as the native
+/// uninstallers do, and keeps the rest of `~/.var/app`.
+#[test]
+fn a_flatpak_uninstall_deletes_its_models_and_cache_and_keeps_your_data() {
+    let mine = [
+        (
+            "io.github.karanshukla.vinowhisper",
+            "data/vinowhisper/transcripts/a.vwsession",
+        ),
+        ("dev.vinosearch.VinoSearch", "data/vinosearch/index.db"),
+    ];
+    for ((id, app_id), (_, kept)) in FLATPAK_APPS.into_iter().zip(mine) {
+        let root = Scratch::new(&format!("flatpak-uninstall-{}", id.slug()));
+        let home = root.mkdir("home");
+        let dir = format!("home/.var/app/{app_id}");
+        let models = format!("{dir}/data/{}/models/m.bin", id.slug());
+        root.write(&models, "a model");
+        root.write(&format!("{dir}/cache/ov-cache/blob"), "compiled");
+        root.write(&format!("{dir}/{kept}"), "yours");
+        root.write(
+            &format!("{dir}/config/{}/config.toml", id.slug()),
+            "settings",
+        );
+        root.script("stubs/flatpak", "[ \"$1\" != info ] || exit 1\n");
+        let step = &steps(id, Channel::Flatpak, Action::Uninstall)[0];
+        let out = std::process::Command::new("bash")
+            .args(["-c", &step.script])
+            .env_clear()
+            .env("HOME", &home)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", root.join("stubs").display()),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let left = |p: &str| root.join(p).exists();
+        assert!(
+            !left(&models) && !left(&format!("{dir}/cache")),
+            "{}",
+            id.name()
+        );
+        assert!(left(&format!("{dir}/{kept}")), "{}", id.name());
+        assert!(
+            left(&format!("{dir}/config/{}/config.toml", id.slug())),
+            "{}",
+            id.name()
+        );
+    }
+}
+
+/// A failed `flatpak uninstall` deletes nothing.
+#[test]
+fn a_failed_flatpak_uninstall_keeps_the_models() {
+    let (id, app_id) = FLATPAK_APPS[0];
+    let root = Scratch::new("flatpak-uninstall-fails");
+    let home = root.mkdir("home");
+    let models = format!("home/.var/app/{app_id}/data/vinowhisper/models/m.bin");
+    root.write(&models, "a model");
+    root.script("stubs/flatpak", "[ \"$1\" != info ] || exit 1\nexit 1\n");
+    let step = &steps(id, Channel::Flatpak, Action::Uninstall)[0];
+    let out = std::process::Command::new("bash")
+        .args(["-c", &step.script])
+        .env_clear()
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", root.join("stubs").display()),
+        )
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(root.join(&models).exists());
+}
+
 /// The stubbed `flatpak info`: installed nowhere yet.
 const INFO_FINDS_NOTHING: &str = "exit 1";
 /// The stubbed `flatpak info`: installed system-wide only.

@@ -507,6 +507,7 @@ scoped_flatpak() {
     fi
 }
 APP_ID=io.github.karanshukla.vinopilot
+MODELS=
 ASSET=vinopilot-x86_64.flatpak
 need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
@@ -561,6 +562,7 @@ scoped_flatpak() {
     fi
 }
 APP_ID=io.github.karanshukla.vinopilot
+MODELS=
 ASSET=vinopilot-x86_64.flatpak
 need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
@@ -617,9 +619,14 @@ scoped_flatpak() {
     fi
 }
 APP_ID=io.github.karanshukla.vinopilot
+MODELS=
 ASSET=vinopilot-x86_64.flatpak
 need flatpak "it's what this was installed with"
 scoped_flatpak uninstall -y "$APP_ID"
+kept="$HOME/.var/app/$APP_ID"
+for d in ${MODELS:+"$kept/data/$MODELS"} "$kept/cache"; do
+    if [ -e "$d" ]; then rm -rf -- "$d" && echo "removed $d"; fi
+done
 --- user
 follow_tui uninstall
 ### vinowhisper Release Install
@@ -817,6 +824,7 @@ scoped_flatpak() {
     fi
 }
 APP_ID=io.github.karanshukla.vinowhisper
+MODELS=vinowhisper/models
 ASSET=vinowhisper-x86_64.flatpak
 need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
@@ -871,6 +879,7 @@ scoped_flatpak() {
     fi
 }
 APP_ID=io.github.karanshukla.vinowhisper
+MODELS=vinowhisper/models
 ASSET=vinowhisper-x86_64.flatpak
 need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
@@ -925,9 +934,14 @@ scoped_flatpak() {
     fi
 }
 APP_ID=io.github.karanshukla.vinowhisper
+MODELS=vinowhisper/models
 ASSET=vinowhisper-x86_64.flatpak
 need flatpak "it's what this was installed with"
 scoped_flatpak uninstall -y "$APP_ID"
+kept="$HOME/.var/app/$APP_ID"
+for d in ${MODELS:+"$kept/data/$MODELS"} "$kept/cache"; do
+    if [ -e "$d" ]; then rm -rf -- "$d" && echo "removed $d"; fi
+done
 ### vinoauthface Release Install
 --- root
 release_run install.sh
@@ -1313,6 +1327,7 @@ scoped_flatpak() {
     fi
 }
 APP_ID=dev.vinosearch.VinoSearch
+MODELS=vinosearch/models
 ASSET=vinosearch-x86_64.flatpak
 need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
@@ -1367,6 +1382,7 @@ scoped_flatpak() {
     fi
 }
 APP_ID=dev.vinosearch.VinoSearch
+MODELS=vinosearch/models
 ASSET=vinosearch-x86_64.flatpak
 need flatpak "install it from https://flatpak.org/setup, then try again"
 fetch "$ASSET"
@@ -1421,9 +1437,14 @@ scoped_flatpak() {
     fi
 }
 APP_ID=dev.vinosearch.VinoSearch
+MODELS=vinosearch/models
 ASSET=vinosearch-x86_64.flatpak
 need flatpak "it's what this was installed with"
 scoped_flatpak uninstall -y "$APP_ID"
+kept="$HOME/.var/app/$APP_ID"
+for d in ${MODELS:+"$kept/data/$MODELS"} "$kept/cache"; do
+    if [ -e "$d" ]; then rm -rf -- "$d" && echo "removed $d"; fi
+done
 ### vinowatch Release Install
 --- user
 release_run install.sh
