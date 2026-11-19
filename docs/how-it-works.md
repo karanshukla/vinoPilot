@@ -1,99 +1,97 @@
 # How vinoPilot works
 
-vinoPilot doesn't install anything itself. Each app has its own hash-checked installer, and vinoPilot knows which one to run for each way in.
+`vinoPilot` delegates installation to each app's own checksum-verified installer. Its job is to detect how each app is installed, check for updates from the matching source, and run the right script for each install method.
 
-## The ways in
+## Installation methods
 
-| Way in | Install | Update | `--via` |
+| Method | Install | Update | `--via` |
 |---|---|---|---|
-| Release | the app's one-line installer from its latest GitHub release, which checks the download against the release's `SHA256SUMS` | the `<app>-upgrade` copy each installer keeps | `release` |
-| Source | clones the repo into your source folder, then runs the checkout's own install script | `git pull --ff-only`, then the same again | `source` |
-| Package | `uv tool` for PyPI, `cargo install` for crates.io | the same tools | `pypi`, `crates` |
-| Flatpak (vinoWhisper, vinoSearch) | the release's Flatpak bundle, checked against the release's checksums and installed with `flatpak install --user` | downloads the new release's bundle over it | `flatpak` |
+| Release | Runs the app's one-line installer from its latest GitHub release and verifies downloads against `SHA256SUMS` | Runs the local `<app>-upgrade` script saved during installation | `release` |
+| Source | Clones the repository into your source folder and runs the checkout's install script | Runs `git pull --ff-only`, then re-runs the install script | `source` |
+| Package | Installs with `uv tool` (PyPI) or `cargo install` (crates.io) | Upgrades with the same package tool | `pypi`, `crates` |
+| Flatpak (`vinoWhisper`, `vinoSearch`) | Downloads the release's Flatpak bundle, verifies its checksum, and runs `flatpak install --user` | Downloads and installs the newer release's bundle over it | `flatpak` |
 
-The source folder is `~/Development` if you have one, else `~/src`. Change it in the window or with `vinopilot config source_root DIR`.
+The default source folder is `~/Development` if it already exists, or `~/src` otherwise. You can change it in the GUI or by running `vinopilot config source_root DIR`.
 
-Uninstalling a Flatpak deletes its models and cache and leaves your data and settings in `~/.var/app`.
+Uninstalling a Flatpak deletes its downloaded models and cache while preserving your data and settings in `~/.var/app`.
 
-### A checkout on another branch
+### Checkouts on another branch
 
-A checkout that isn't on its default branch is never pulled. What happens instead depends on the app:
+`vinoPilot` never pulls a checkout that is not on its default branch. Instead, behavior depends on the app:
 
-| Apps | What vinoPilot does |
+| Apps | Behavior when off the default branch |
 |---|---|
-| Most | Checks out the default branch in `~/.local/share/vinopilot/worktrees/<repo>`, installs from that, then removes it. Your checkout is left alone. |
-| vinoWhisper, vinoPop, vinoUserInterface | These run from their checkout, so the checkout itself switches to the default branch, with uncommitted changes stashed first. The log says how to get back. |
+| Most apps | Checks out the default branch into a temporary worktree at `~/.local/share/vinopilot/worktrees/<repo>`, builds/installs from it, and removes the worktree afterward. Your main checkout is left untouched. |
+| `vinoWhisper`, `vinoPop`, `vinoUserInterface` | Switches your main checkout to the default branch after stashing any uncommitted changes, and logs how to return to your branch. |
 
-A worktree for those three would be a second copy the app quietly runs from, which is why they switch instead.
+Those three apps execute directly from their checkout directory, so installing from a temporary worktree would leave the app running from a separate hidden copy.
 
-After a worktree install, the commit it built is recorded in the checkout as `refs/vinopilot/installed`. `vinopilot check` counts how far behind that commit is, not your branch.
+After a worktree install, `vinoPilot` records the installed commit in your checkout at `refs/vinopilot/installed`. `vinopilot check` then measures commits behind relative to that ref rather than your active branch.
 
 ## Detection
 
-vinoPilot works out how each app is installed by looking, not by keeping its own records:
+`vinoPilot` inspects your system directly instead of maintaining a private install database, so it automatically recognizes apps installed manually. It checks:
 
-- the `-upgrade` scripts the release installers leave in `~/.local/bin`
-- `uv`'s tool receipts
-- cargo's `~/.cargo/.crates.toml`, read as TOML: only the keys of its `[v1]` table count, and a file that doesn't parse reads as no cargo installs (since 2026-11-15; before that any quoted `name version (source)` line counted, wherever it was)
-- each binary's `--version` (given two seconds to answer)
+- The `<app>-upgrade` scripts placed in `~/.local/bin` by release installers.
+- `uv` tool receipts.
+- Cargo's `~/.cargo/.crates.toml`, parsed as TOML: only keys inside the `[v1]` table count, and an unparseable file is treated as having no Cargo installs (as of 2026-11-15; earlier versions matched any quoted `name version (source)` line anywhere in the file).
+- Each binary's `--version` output (with a 2-second timeout).
 
-So it also sees apps you installed by hand before vinoPilot existed.
+Installations in your home directory take precedence. If none is found, `vinoPilot` checks for its own `.deb`, `.rpm`, or Flatpak package, and for Flatpak installations of supported apps. Because a Flatpak app runs inside its sandbox, its version is read from the newest release entry in its AppStream metainfo.
 
-A copy in your home runs first. Without one, vinoPilot is found as its .deb, .rpm or Flatpak, and an app as its Flatpak. A Flatpak app only runs in its sandbox, so its version comes from its metainfo's newest release.
+## Network access
 
-## Going online
-
-Nothing goes online until you press **Check for updates** (or run `vinopilot check`). Then it asks GitHub, PyPI and crates.io for the newest versions and runs `git fetch` in each checkout.
+`vinoPilot` stays offline until you click **Check for updates** or run `vinopilot check`. Checking for updates queries GitHub, PyPI, and crates.io for the newest releases and runs `git fetch` in each local checkout.
 
 ## Limits
 
-- **Uninstalling an app removes its downloaded models** and keeps your own data and settings (transcripts, indexes, face templates). Each app's own uninstaller decides what that covers; vinoPilot runs it. Shared folders such as `~/.cache/huggingface` and the runtime ovfetch fetched stay.
-- **Only newer vinoWhisper releases have an uninstaller** (`vinowhisper-upgrade --uninstall`), and vinoPilot uses it when it's there. Otherwise vinoPilot's own undoes what the installer writes (the `uv` tool, the units, the tray and window, the menu entries) and deletes the models in `~/.local/share/vinowhisper/models` and `~/.cache/vinowhisper`; transcripts, sessions and settings stay.
-- **A vinoSpeak installed from PyPI keeps its models** when uninstalled: there's no checkout or `vinospeak-upgrade` to run its uninstaller from. They're in `~/.cache/vinospeak`.
-- **Uninstalling a source install moves its checkout to the trash** (with `gio`, `kioclient` or `trash-put`), unless it has uncommitted, unpushed or stashed work: then it's kept and the uninstall says why. Copies an old `cargo install` left in `~/.cargo/bin` go too.
-- **Detection is a best guess for hand installs.** An app with no `-upgrade` script, no uv receipt and no cargo record but a binary in `~/.local/bin` shows as a source install.
-- **A version of `dev` means a source build.** Release builds (and the Flatpak) are stamped with their tag, builds from a checkout say `dev`, and vinoPilot treats that as a source install whatever `-upgrade` script sits beside it. A `dev` build is never offered a release. vinoAuthFace has no marker, so its version is all there is. Older releases of the other apps print their last release's number even when built from a checkout, so they're still told by their markers. vinoPilot's own build follows the same rule; `cargo install vinopilot` from crates.io counts as a release.
-- Installers that want to ask you something get no terminal; each runs with its non-interactive defaults (vinoWhisper and vinoSpeak with `--gui`).
+- **Uninstalling an app deletes its downloaded models** while keeping user data and settings (such as transcripts, search indexes, and face templates). Each app's uninstaller determines the exact cleanup; `vinoPilot` invokes it. Shared directories such as `~/.cache/huggingface` and runtimes installed by `ovfetch` are left in place.
+- **Older `vinoWhisper` releases lack a built-in uninstaller:** Newer releases provide `vinowhisper-upgrade --uninstall`, which `vinoPilot` uses when present. For older releases, `vinoPilot` removes the `uv` tool, systemd units, tray/window files, menu entries, and models under `~/.local/share/vinowhisper/models` and `~/.cache/vinowhisper`, while keeping transcripts, sessions, and settings.
+- **`vinoSpeak` installed from PyPI keeps its models on uninstall:** PyPI installs have neither a source checkout nor `vinospeak-upgrade` to run the uninstaller from. Models remain in `~/.cache/vinospeak`.
+- **Uninstalling a source install moves its checkout to the trash** (using `gio`, `kioclient`, or `trash-put`), unless the repository has uncommitted changes, unpushed commits, or stashed work—in which case it is kept and the uninstall explains why. Stale binaries left in `~/.cargo/bin` by an earlier `cargo install` are also removed.
+- **Detection for manually installed apps is best-effort:** An app with a binary in `~/.local/bin` but no `-upgrade` script, `uv` receipt, or Cargo record is reported as a source install.
+- **A version of `dev` indicates a source build:** Release binaries (and Flatpaks) are stamped with their release tag, whereas local builds from a checkout report `dev`. `vinoPilot` treats a `dev` binary as a source install regardless of any `-upgrade` script beside it and does not offer release updates for it. `vinoAuthFace` has no install marker, so detection relies on its version alone. Older releases of other apps printed their previous release tag even when built from a checkout, so those still rely on install markers. `vinoPilot` follows the same rule for itself; `cargo install vinopilot` from crates.io counts as a release.
+- **Non-interactive execution:** Installers receive no terminal and run with non-interactive defaults (`vinoWhisper` and `vinoSpeak` run with `--gui`).
 
 ## The steps
 
-For contributors. Every action is a list of steps, and a step is one shell script run with `bash -c`, as you or as root through `pkexec`. `vinopilot steps APP ACTION` prints them.
+This section documents the catalog architecture for contributors. Every action is a sequence of steps, and each step is a shell script executed via `bash -c` either as the current user or as root via `pkexec`. Run `vinopilot steps APP ACTION` to inspect the exact scripts.
 
-| File | Holds |
+| File | Contents |
 |---|---|
-| `crates/core/src/catalog.rs` | the components, their ways in, and what an uninstall says it removes |
-| `crates/core/src/catalog/scripts.rs` | the shell itself: the prelude every step starts with, and the longer scripts |
-| `crates/core/src/catalog/steps.rs` | one table per component: which script each (way in, action) runs |
-| `crates/core/src/catalog/steps.snapshot` | every script of every combination, pinned |
+| `crates/core/src/catalog.rs` | Component definitions, supported install methods, and uninstall cleanup descriptions |
+| `crates/core/src/catalog/scripts.rs` | Shared shell prelude prepended to every step, plus longer reusable scripts |
+| `crates/core/src/catalog/steps.rs` | Per-component tables mapping each `(install method, action)` pair to its scripts |
+| `crates/core/src/catalog/steps.snapshot` | Snapshot pinning the exact generated script for every combination |
 
-The scripts are a contract with each app's installer, so `every_script_matches_the_snapshot` fails on any change to one. A deliberate change is blessed with `VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core`, and the snapshot's diff is what to review. The snapshot proves the bytes; it doesn't prove the app's installer still takes them, so run the install, update and uninstall for real too.
+Because these scripts form a contract with each app's installer, `every_script_matches_the_snapshot` fails on any modification. Bless intentional changes with `VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core` and review the snapshot diff carefully. Because the snapshot only verifies script text and not upstream installer compatibility, always run the real install, update, and uninstall as well.
 
-Paths and settings reach a script as environment variables (`$CHECKOUT`, `$WORKTREE`, `$OFF_BRANCH`, `$REPO_URL`, `$RELEASE`), never formatted into it. `pkexec` clears the environment, so a root step gets them as `pkexec env NAME=value ...` arguments, plus `SUDO_USER` so vinoAuthFace's scripts find the desktop user.
+Paths and settings are passed into scripts through environment variables (`$CHECKOUT`, `$WORKTREE`, `$OFF_BRANCH`, `$REPO_URL`, `$RELEASE`) rather than interpolated into shell strings. Because `pkexec` clears the environment, root steps receive them explicitly via `pkexec env NAME=value ...`, along with `SUDO_USER` so `vinoAuthFace`'s scripts can locate the desktop user.
 
 ### What each app's installer expects
 
-| App | Notes |
+| App | Installer details |
 |---|---|
-| vinoWhisper | `install.sh` runs `vinowhisper-setup` on a first install. |
-| vinoPop | `get.sh` unpacks the release and runs its `install.sh`. |
-| vinoSearch | The installer passes `--uninstall` through to the release's `scripts/install.sh`. |
-| vinoWatch | `vinowatch-upgrade` is a copy of `install.sh`, which is POSIX `sh`. |
-| vinoOpenEffects | Its uninstaller is `vinoopeneffects-upgrade --uninstall` in releases that have it. Before that it shipped only in the repo, so vinoPilot uses the checkout's, or a shallow clone's. |
-| vinoAuthFace | Root throughout. The checkout is pulled as the user so it stays the user's, then `deploy.sh` runs as root. |
-| ovfetch | A bare binary in the release, a bin crate on crates.io. Each install drops the other channel's copy, which would otherwise shadow it or be what detection finds. |
-| vinoPilot | Its `install.sh` builds from a checkout when run from one. Its .deb, .rpm and Flatpak are found, not offered: no other component has them. |
-| vinoUserInterface | A library, so "installed" means a checkout that builds. |
+| `vinoWhisper` | `install.sh` runs `vinowhisper-setup` automatically on a first install. |
+| `vinoPop` | `get.sh` unpacks the release archive and runs its bundled `install.sh`. |
+| `vinoSearch` | The installer forwards `--uninstall` to the release's `scripts/install.sh`. |
+| `vinoWatch` | `vinowatch-upgrade` is a copy of `install.sh` (POSIX `sh`). |
+| `vinoOpenEffects` | Newer releases support `vinoopeneffects-upgrade --uninstall`. Older releases shipped the uninstaller only in Git, so `vinoPilot` runs it from the local checkout or a shallow clone. |
+| `vinoAuthFace` | Runs as root. Source updates pull the checkout as the regular user so file ownership stays intact, then run `deploy.sh` as root. |
+| `ovfetch` | Distributed as a standalone binary in GitHub releases and as a binary crate on crates.io. Installing from one source removes the other's copy so it does not shadow the active binary or confuse detection. |
+| `vinoPilot` | `install.sh` builds from source when invoked inside a checkout. Its `.deb`, `.rpm`, and Flatpak packages are detected for updates/uninstalls but not offered as generic install targets, since no other component uses them. |
+| `vinoUserInterface` | A Rust library rather than an end-user app; "installed" means a local Git checkout that compiles. |
 
 ### Packages and Flatpaks
 
-A package step (vinoPilot's .deb and .rpm, and any Flatpak bundle) starts with three helpers:
+Package steps (`vinoPilot`'s `.deb`/`.rpm` packages and app Flatpak bundles) include three shell helpers:
 
-- `fetch ASSET` downloads that file of the release and checks it against the release's `SHA256SUMS`, as install.sh does the tarball, or against its own `ASSET.sha256` when `SHA256SUMS` has no line for it (vinoWhisper's is written before its bundle is built) or isn't there (vinoSearch's). A wrong hash in `SHA256SUMS` still fails.
-- `as_root` is `pkexec` for the one command that installs a system package. The download and the check stay the user's.
-- `scoped_flatpak` runs `flatpak` where the app is installed. A first install goes to the user's installation: no password, like the other ways in.
+- `fetch ASSET`: Downloads the named release asset and verifies it against the release's `SHA256SUMS` (just as `install.sh` verifies tarballs), falling back to `ASSET.sha256` if `SHA256SUMS` omits that asset (`vinoWhisper` writes `SHA256SUMS` before building its Flatpak bundle) or does not exist (`vinoSearch`). A mismatched checksum in `SHA256SUMS` always fails.
+- `as_root`: Wraps only the system package installation command in `pkexec`; downloading and checksum verification always run as the regular user.
+- `scoped_flatpak`: Runs `flatpak` against whichever installation scope (`--user` or `--system`) owns the app. Fresh installs always target `--user` so no password is needed, matching the other install methods.
 
-A system-wide Flatpak goes through `as_root`, not Flatpak's own polkit prompt. Flatpak's polkit check finds no password agent for a process outside the desktop's session, and the window's steps run in systemd's user manager, so it fails with "not allowed for user" where `pkexec` asks.
+System-wide Flatpaks invoke `as_root` instead of relying on Flatpak's built-in polkit prompt. Because GUI actions run inside systemd's user manager outside the desktop session, Flatpak's polkit check cannot locate a password agent and fails with `"not allowed for user"`, whereas `pkexec` prompts normally.
 
-A bundle with a newer commit installs over the old one. The same commit is an error to Flatpak, `--reinstall` or not (Flatpak 1.14, checked 2026-11-09), and vinoPilot reports it as nothing to do. A running window keeps its files until it closes: Flatpak removes a deployment that's in use afterwards.
+Installing a Flatpak bundle with a newer commit replaces the existing deployment. Reinstalling the exact same commit causes Flatpak to return an error whether or not `--reinstall` is passed (Flatpak 1.14, checked 2026-11-09), which `vinoPilot` reports as already up to date. If the app window is currently open, Flatpak keeps the active deployment until the window closes and removes it afterward.
 
-Uninstalling a Flatpak also deletes what a native uninstall would: the app's models (`~/.var/app/<app id>/data/<app>/models`) and its cache (`~/.var/app/<app id>/cache`). The rest of `~/.var/app/<app id>` (transcripts, the index, settings) stays. Removing the Flatpak from Discover, GNOME Software or `flatpak uninstall` yourself doesn't run this: Flatpak has no uninstall hook, so the models stay there unless you pick its "delete data" option or pass `--delete-data`, which deletes your data too.
+When uninstalling a Flatpak through `vinoPilot`, `vinoPilot` also removes the app's downloaded models (`~/.var/app/<app id>/data/<app>/models`) and cache (`~/.var/app/<app id>/cache`), matching native uninstalls while preserving the rest of `~/.var/app/<app id>` (transcripts, search indexes, and settings). Removing a Flatpak via Discover, GNOME Software, or `flatpak uninstall` does not perform this selective cleanup because Flatpak has no uninstall hook—models remain unless you choose "delete data" (`--delete-data`), which removes your user data as well.
