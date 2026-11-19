@@ -1,5 +1,10 @@
 # vinopilot-core
 
-What [vinoPilot](https://github.com/karanshukla/vinopilot) knows about the vinoPilot apps, with no UI: how each one installs, updates and uninstalls from its release, a source checkout, PyPI or crates.io (`catalog`); how each is installed on this machine (`detect`); the newest version from each source (`remote`); and running an action with its output streamed (`job`).
+The core library behind [vinoPilot](https://github.com/karanshukla/vinopilot), providing all non-UI functionality:
 
-The `vinopilot` command and the `vinopilot-gui` window are built on it. Frontends in other languages should drive `vinopilot --json` instead; see [docs/json-api.md](https://github.com/karanshukla/vinopilot/blob/main/docs/json-api.md).
+- `catalog`: Install, update, and uninstall steps for each app across releases, source checkouts, PyPI, crates.io, and Flatpaks.
+- `detect`: Local detection of which apps are installed and how.
+- `remote`: Remote version lookups from each installation source.
+- `job`: Action execution with streaming output.
+
+Both the `vinopilot` CLI and the `vinopilot-gui` desktop app are built on this crate. Frontends written in other languages should invoke `vinopilot --json` instead; see [docs/json-api.md](https://github.com/karanshukla/vinopilot/blob/main/docs/json-api.md).

@@ -1,36 +1,36 @@
 # vinoPilot
 
-One place to install, update and uninstall the [vinoPilot](https://vinopilot.ca/) apps. Each app already has its own hash-checked installer. vinoPilot knows which one to run, how each app got onto your machine, and whether there's something newer for that way in.
+A single tool to install, update, and uninstall the [vinoPilot](https://vinopilot.ca/) apps. Each app already ships its own checksum-verified installer; `vinoPilot` tracks how each app was installed on your system, checks for newer versions from that source, and invokes the matching installer.
 
-![The vinoPilot window in the dark theme: a grid of app cards, each with its version, how it was installed, and Update or Install](docs/images/window-dark.png)
+![The vinoPilot window in the dark theme: a grid of app cards, each with its version, install method, and Update or Install button](docs/images/window-dark.png)
 
-## What it manages
+## Managed components
 
 | Component | Release | Source | Package |
 |---|---|---|---|
-| [vinoWhisper](https://github.com/karanshukla/vinoWhisper) | yes, or its Flatpak | yes | [PyPI](https://pypi.org/project/vinowhisper/) |
-| [vinoAuthFace](https://github.com/karanshukla/vinoAuthFace) | yes (asks for your password) | yes | |
-| [vinoOpenEffects](https://github.com/karanshukla/vinoOpenEffects) | yes | yes | |
-| [vinoPop](https://github.com/karanshukla/vinoPop) | yes | yes | |
-| [vinoSpeak](https://github.com/karanshukla/vinoSpeak) | yes | yes | [PyPI](https://pypi.org/project/vinospeak/) |
-| [vinoSearch](https://github.com/karanshukla/vinoSearch) | yes, or its Flatpak | yes | |
-| [vinoWatch](https://github.com/karanshukla/vinoWatch) | yes | yes | |
-| [ovfetch](https://github.com/karanshukla/ovfetch) | yes | yes | [crates.io](https://crates.io/crates/ovfetch) |
-| [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) | | a checkout that builds | a library, nothing to install |
-| vinoPilot itself | yes | yes | [crates.io](https://crates.io/crates/vinopilot) |
+| [vinoWhisper](https://github.com/karanshukla/vinoWhisper) | Yes, or Flatpak | Yes | [PyPI](https://pypi.org/project/vinowhisper/) |
+| [vinoAuthFace](https://github.com/karanshukla/vinoAuthFace) | Yes (prompts for password) | Yes | |
+| [vinoOpenEffects](https://github.com/karanshukla/vinoOpenEffects) | Yes | Yes | |
+| [vinoPop](https://github.com/karanshukla/vinoPop) | Yes | Yes | |
+| [vinoSpeak](https://github.com/karanshukla/vinoSpeak) | Yes | Yes | [PyPI](https://pypi.org/project/vinospeak/) |
+| [vinoSearch](https://github.com/karanshukla/vinoSearch) | Yes, or Flatpak | Yes | |
+| [vinoWatch](https://github.com/karanshukla/vinoWatch) | Yes | Yes | |
+| [ovfetch](https://github.com/karanshukla/ovfetch) | Yes | Yes | [crates.io](https://crates.io/crates/ovfetch) |
+| [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) | | Git checkout that builds | Library (nothing installed) |
+| vinoPilot itself | Yes | Yes | [crates.io](https://crates.io/crates/vinopilot) |
 
-- **Release**: the app's own one-line installer from its latest GitHub release, checked against the release's `SHA256SUMS`.
-- **Source**: a clone in your source folder, installed with the checkout's own script.
-- **Package**: `uv tool` for PyPI, `cargo install` for crates.io.
+- **Release:** Runs the app's official one-line installer from its latest GitHub release and verifies downloads against `SHA256SUMS`.
+- **Source:** Clones the repository into your source directory and runs the checkout's install script.
+- **Package:** Installs via `uv tool` (for PyPI) or `cargo install` (for crates.io).
 
-vinoPilot keeps no records of its own. It works out how each app is installed by looking, so it also sees apps you installed by hand. Nothing goes online until you press **Check for updates** or run `vinopilot check`. [docs/how-it-works.md](docs/how-it-works.md) has the detail on each way in, detection and the limits.
+`vinoPilot` maintains no private database of installed apps. Instead, it detects existing installations directly on your system, so apps you installed manually are also recognized. It stays offline until you click **Check for updates** or run `vinopilot check`. See [docs/how-it-works.md](docs/how-it-works.md) for details on install methods, detection, and limitations.
 
 ## Install
 
-Download the Flatpak, the .deb or the .rpm from the [latest release](https://github.com/karanshukla/vinopilot/releases/latest). Each holds `vinopilot` (the command) and `vinopilot-gui` (the window), and adds vinoPilot to your app menu.
+Download the Flatpak, `.deb`, or `.rpm` from the [latest release](https://github.com/karanshukla/vinopilot/releases/latest). Every package includes both `vinopilot` (the CLI) and `vinopilot-gui` (the desktop window) and adds vinoPilot to your application menu.
 
 ```sh
-# Flatpak: any distro, including rpm-ostree ones (Silverblue, Kinoite, Bazzite)
+# Flatpak (any distro, including rpm-ostree systems like Silverblue, Kinoite, and Bazzite)
 curl -fsSLO https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.flatpak
 flatpak install --user ./vinopilot-x86_64.flatpak
 
@@ -42,62 +42,63 @@ sudo apt install ./vinopilot-x86_64.deb
 sudo dnf install https://github.com/karanshukla/vinopilot/releases/latest/download/vinopilot-x86_64.rpm
 ```
 
-x86_64 only for the release binaries, same as the apps it installs.
+Prebuilt release binaries are provided for Linux `x86_64` only, matching the apps `vinoPilot` manages.
 
-[docs/install.md](docs/install.md) covers the one-line installer (no sudo), crates.io, a checkout, what the Flatpak is allowed to do, and updating or uninstalling vinoPilot itself.
+See [docs/install.md](docs/install.md) for the non-root one-line installer, crates.io, building from a Git checkout, Flatpak host permissions, and self-updating or uninstalling `vinoPilot`.
 
-## The window
+## Desktop window
 
-Nine cards, three by three: the seven apps, ovfetch and vinoUserInterface. Each has its version, how it's installed, and **Update** or **Install**. Before installing, the switch on the card picks the way in. The installer's output streams into a panel underneath, with **Stop**.
+The GUI displays a 3×3 grid of nine cards covering the seven apps, `ovfetch`, and `vinoUserInterface`. Each card shows its installed version, install method, and an **Update** or **Install** button. Before installing an app, use the card's selector to choose the install method. Installer output streams into a panel at the bottom with a **Stop** button.
 
-- **Update all** appears once a check finds something.
-- vinoPilot's own version is a button in the header. It checks for a newer vinoPilot, updates to it, then restarts into it.
-- vinoAuthFace installs system-wide, so its actions go through `pkexec` and ask for your password.
+- **Update all** appears once an update check finds available updates.
+- Click vinoPilot's version button in the header to check for a newer release, update vinoPilot, and restart into the new version.
+- `vinoAuthFace` installs system-wide, so its actions run via `pkexec` and prompt for your password.
 
-It follows the desktop's light or dark setting, and drops to one column when three don't fit, like when snapped to half a laptop screen:
+The window follows your desktop's light or dark theme and automatically switches to a single column when three columns do not fit (for example, when tiled to half a laptop screen):
 
 <p align="center">
   <img src="docs/images/window-light.png" width="64%" alt="The window in the light theme">
   <img src="docs/images/narrow-dark.png" width="27%" alt="The window at 420 px wide: one column of cards">
 </p>
 
-## The command
+## Command line
 
 ```sh
-vinopilot list                    # what's installed, and how (offline)
-vinopilot check                   # plus the newest version of each (online)
+vinopilot list                    # show installed apps and install methods (offline)
+vinopilot check                   # also query the newest version of each app (online)
 vinopilot install whisper --via pypi
 vinopilot update --all
 vinopilot uninstall pop
-vinopilot steps search install    # print the shell an action would run, without running it
+vinopilot steps search install    # print the shell script an action would run without executing it
 ```
 
-App names work with or without the `vino`. `--via` takes `release` (the default), `source`, `pypi` or `crates`, and `flatpak` for vinoWhisper and vinoSearch. Exit codes: 0 done, 1 failed, 2 bad usage.
+- App names work with or without the `vino` prefix.
+- `--via` accepts `release` (default), `source`, `pypi`, `crates`, and `flatpak` (for `vinoWhisper` and `vinoSearch`).
+- **Exit codes:** `0` succeeded, `1` failed, `2` invalid CLI usage.
+- Options can appear anywhere on the command line. Short flags can be combined (`-yh`), `--` ends option parsing, and passing a value to a flag that takes none (such as `--json=x`) is rejected.
 
-Options go anywhere on the line. Short ones combine (`-yh`), `--` ends them, and a value on an option that takes none (`--json=x`) is refused.
+Passing `--json` exposes a machine-readable API: `list` and `check` output a single JSON document, while install/update/uninstall actions stream one JSON event per line. Frontends in other languages can drive `vinopilot --json` directly instead of reimplementing the catalog. See [docs/json-api.md](docs/json-api.md) for the schema.
 
-`--json` turns it into an API: `list` and `check` print one document, and actions print one event per line. A frontend in another language should drive that instead of reimplementing the catalog. [docs/json-api.md](docs/json-api.md) has the shape.
+A terminal UI is also available as a lightweight [Textual](https://textual.textualize.io/) frontend over `vinopilot --json`: install with `uv tool install vinopilot` and run `vinopilot-tui`. See [tui/README.md](tui/README.md).
 
-There's a terminal UI too, a thin [Textual](https://textual.textualize.io/) frontend over `vinopilot --json`: `uv tool install vinopilot`, then `vinopilot-tui`. See [tui/README.md](tui/README.md).
+## Limitations
 
-## Limits
+- **Uninstalling an app deletes its downloaded models** while keeping user data and settings. Each app's own uninstaller defines what is removed.
+- **Uninstalling a source install moves its checkout to the trash**, unless the repository contains uncommitted, unpushed, or stashed work.
+- **Detection for manually installed apps is best-effort.**
+- Installers run without an interactive terminal, so each runs with its non-interactive defaults.
 
-- **Uninstalling an app removes its downloaded models** and keeps your own data and settings. Each app's own uninstaller decides what that covers.
-- **Uninstalling a source install moves its checkout to the trash**, unless it holds work that's nowhere else.
-- **Detection is a best guess for hand installs.**
-- Installers get no terminal, so each runs with its non-interactive defaults.
+See the full list in [docs/how-it-works.md](docs/how-it-works.md#limits).
 
-The full list is in [docs/how-it-works.md](docs/how-it-works.md#limits).
+## Repository layout
 
-## Layout
-
-| Path | What |
+| Path | Description |
 |---|---|
-| `crates/core` | `vinopilot-core`: the catalog (each app's install, update and uninstall steps per way in), detection, version checks, the job runner. No UI. |
-| `crates/cli` | `vinopilot`: the command, and the `--json` API |
-| `crates/gui` | `vinopilot-gui`: the egui window, drawn with [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) |
-| `tui/` | `vinopilot-tui`: the same in a terminal, from PyPI |
-| `install.sh` | the one-line installer, and the source install from a checkout |
-| `packaging/` | what the .deb, the .rpm and the Flatpak add around the release's binaries |
+| `crates/core` | `vinopilot-core`: catalog (install, update, and uninstall steps per method), local detection, remote version checks, and the job runner (no UI) |
+| `crates/cli` | `vinopilot`: CLI binary and `--json` API |
+| `crates/gui` | `vinopilot-gui`: egui desktop window built with [vinoUserInterface](https://github.com/karanshukla/vinoUserInterface) |
+| `tui/` | `vinopilot-tui`: Python Textual terminal UI distributed on PyPI |
+| `install.sh` | One-line installer and source-checkout installer |
+| `packaging/` | Packaging metadata for `.deb`, `.rpm`, and Flatpak builds |
 
-[vinopilot.ca](https://vinopilot.ca/) has the apps themselves. Issues and PRs welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Visit [vinopilot.ca](https://vinopilot.ca/) for the full suite of apps. Issues and pull requests are welcome—see [CONTRIBUTING.md](CONTRIBUTING.md).

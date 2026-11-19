@@ -1,8 +1,8 @@
-# vinoPilot in a terminal
+# vinoPilot TUI
 
-The [vinoPilot](https://github.com/karanshukla/vinopilot) window, for a terminal: a table of the vinoPilot apps with their version, how each is installed and whether there's something newer, the installer's output underneath, and one key per action.
+A terminal user interface for [vinoPilot](https://github.com/karanshukla/vinopilot). It displays a table of the `vinoPilot` apps with their installed versions, installation methods, and update status, streams installer output underneath, and maps each action to a single key.
 
-It's a thin frontend. Everything it knows comes from the `vinopilot` command's `--json` output, and every action is a `vinopilot` run, so what the window does and what the table does can't drift apart. If the command isn't there, the first screen offers to fetch it from the latest release with the same hash-checked installer the README gives.
+`vinopilot-tui` is a thin frontend over the Rust `vinopilot` CLI: all state comes from `vinopilot --json` and every action executes `vinopilot`, keeping behavior identical to the GUI. If `vinopilot` is not yet installed, the startup screen offers to download and install it from the latest release using the standard checksum-verified installer.
 
 ## Install
 
@@ -11,27 +11,27 @@ uv tool install vinopilot
 vinopilot-tui
 ```
 
-or `pipx install vinopilot`. The command is `vinopilot-tui`, not `vinopilot`: that name is the Rust command this drives, and `uv tool` would otherwise overwrite it in `~/.local/bin`.
+You can also install with `pipx install vinopilot`. The command is named `vinopilot-tui` rather than `vinopilot` so it does not collide with the Rust `vinopilot` binary in `~/.local/bin`.
 
-## Keys
+## Keybindings
 
-| Key | Does |
+| Key | Action |
 |---|---|
-| `c` | Check for updates (the only thing that goes online, besides the actions themselves) |
-| `i` | Install the selected app; asks which way when there's more than one |
-| `u` | Update it, the way it's installed |
-| `a` | Update everything that has an update, vinoPilot included |
-| `p` | vinoPilot itself, whose version is in the status line: checks for a newer one, then updates to it, then restarts into it |
-| `x` | Uninstall it, after a yes |
-| `s` | Show the shell an action would run, without running it |
-| `r` | Change where source checkouts go |
-| `Esc` | Stop the running action |
+| `c` | Check for updates (the only network lookup aside from running install/update actions) |
+| `i` | Install the selected app (prompts for an install method when multiple are available) |
+| `u` | Update the selected app using its current install method |
+| `a` | Update all apps with available updates, including `vinoPilot` itself |
+| `p` | Check for a newer `vinoPilot` release (shown in the status line), update it, and restart |
+| `x` | Uninstall the selected app (asks for confirmation) |
+| `s` | Preview the shell script an action would run without executing it |
+| `r` | Change the source checkout directory |
+| `Esc` | Stop the currently running action |
 | `q` | Quit |
 
-After an action the table is rescanned: offline, or online again if you had checked for updates.
+After an action completes, the table automatically refreshes—offline by default, or online if you had previously run an update check.
 
-## Limits
+## Limitations and configuration
 
-- vinoAuthFace's steps run through `pkexec`. On a desktop the polkit agent asks for your password in a dialog. Over ssh with no agent, pkexec has no way to ask and the step fails.
-- Stopping an action ends the `vinopilot` run, but a `pkexec` child is root's and runs on.
-- `VINOPILOT_BIN=/path/to/vinopilot` picks the command to drive, for a checkout build.
+- `vinoAuthFace` steps run via `pkexec`. On a desktop session, your polkit agent prompts for your password in a dialog. Over SSH without a polkit agent, `pkexec` cannot prompt and the action fails.
+- Pressing `Esc` stops the `vinopilot` process, but a child process already running as root under `pkexec` continues to completion.
+- Set `VINOPILOT_BIN=/path/to/vinopilot` to target a specific CLI binary (for example, a local Cargo build).

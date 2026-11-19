@@ -1,10 +1,10 @@
 # Contributing
 
-The most useful thing you can bring is a report from a machine set up differently from mine: an app installed some way vinoPilot misreads, or an install, update or uninstall that fails. Attach `vinopilot list --json` and the installer's output.
+Reports from machines with different setups are especially helpful—for example, an existing app installation that `vinoPilot` detects incorrectly, or an install, update, or uninstall failure. Please attach the output of `vinopilot list --json` along with the installer log.
 
-## Setup
+## Development setup
 
-Plain cargo, nothing else needed. The tests use throwaway homes and a `file://` fake release; none of them install anything for real.
+The Rust workspace uses a standard Cargo setup with no extra prerequisites. Tests run against temporary home directories and a `file://` mock release, so nothing is installed to your system.
 
 ```bash
 cargo test --workspace
@@ -12,7 +12,7 @@ cargo run -p vinopilot -- list
 cargo run -p vinopilot-gui
 ```
 
-## Before you push
+## Before pushing
 
 ```bash
 cargo fmt --all --check
@@ -23,20 +23,22 @@ cargo build -p vinopilot -p vinopilot-gui && tests/install-e2e.sh target/debug
 cd tui && uv run --frozen pytest -q && uv run --frozen ruff check . && uv run --frozen ruff format --check .
 ```
 
-CI also builds the release tarball, the .deb, the .rpm and the Flatpak the way `release.yml` does, installs each (the .deb on Debian and the .rpm on Fedora, in containers) and runs it. A PR's packages are in its run's `dist` artifact.
+CI also builds the release tarball, `.deb`, `.rpm`, and Flatpak using the same steps as `release.yml`, installs them in containers (`.deb` on Debian, `.rpm` on Fedora), and runs smoke checks. Pull request packages are attached to the workflow run as the `dist` artifact.
 
-- The terminal UI in `tui/` needs [uv](https://docs.astral.sh/uv/); `cd tui && uv sync` makes its venv, `VINOPILOT_BIN=../target/debug/vinopilot uv run vinopilot-tui` runs it on this checkout's command. Its tests drive a fake `vinopilot`, so a JSON change needs `tests/fake_vinopilot.py` updated too.
-- `crates/cli/tests/cli.rs` is the `--json` contract. Change it when you change the shape, and say so in the changelog and `docs/json-api.md`.
-- Changed the window: regenerate the pictures with `cargo test -p vinopilot-gui --test screenshots -- --ignored` (needs a GPU or lavapipe) and commit `docs/images`.
-- Changed an app's steps in `crates/core/src/catalog/`: bless the snapshot (`VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core`), run that install, update and uninstall for real, and say so in the PR. The tests only check the scripts parse and that none changed by accident. [docs/how-it-works.md](docs/how-it-works.md#the-steps) has the layout.
-- Comments are the last resort: extract, name, or pin a rule with a test pair first, and link the test from the code it governs. See [docs/comment-style.md](docs/comment-style.md); `crates/cli/tests/doc_links.rs` and `tui/tests/test_doc_links.py` check the links.
-- Commits are conventional (`feat:`, `fix:`, `docs:`, ...); the changelog is generated from them with `git cliff`.
-- Every Actions `uses:` is pinned to a commit SHA with a version comment.
-- A `deny.toml` advisory ignore needs a written reason next to it.
+## Guidelines
+
+- **Terminal UI (`tui/`):** Requires [uv](https://docs.astral.sh/uv/). Run `cd tui && uv sync` to create the environment, and `VINOPILOT_BIN=../target/debug/vinopilot uv run vinopilot-tui` to run against your local CLI build. Its test suite drives a mock `vinopilot`, so any `--json` schema change must also update `tui/tests/fake_vinopilot.py`.
+- **JSON contract:** `crates/cli/tests/cli.rs` pins the `--json` schema. Update it whenever the format changes and document the change in `CHANGELOG.md` and `docs/json-api.md`.
+- **GUI screenshots:** When changing the desktop window, regenerate the screenshots with `cargo test -p vinopilot-gui --test screenshots -- --ignored` (requires a GPU or `lavapipe`) and commit `docs/images`.
+- **Catalog steps:** When changing an app's scripts under `crates/core/src/catalog/`, update the snapshot with `VINOPILOT_BLESS_STEPS=1 cargo test -p vinopilot-core`, test the real install, update, and uninstall end-to-end, and note that in your PR. Automated tests only verify script syntax and catch accidental changes. See [docs/how-it-works.md](docs/how-it-works.md#the-steps) for the catalog layout.
+- **Comments:** Prefer clear naming, helper extraction, or paired tests over comments, and cite the governing test in any remaining comments. See [docs/comment-style.md](docs/comment-style.md); `crates/cli/tests/doc_links.rs` and `tui/tests/test_doc_links.py` verify these citations.
+- **Commits:** Use Conventional Commits (`feat:`, `fix:`, `docs:`, etc.); `CHANGELOG.md` is generated with `git cliff`.
+- **CI actions:** Pin every GitHub Actions `uses:` reference to a full commit SHA with a version comment.
+- **Dependency advisories:** Include a written reason beside any advisory ignore in `deny.toml`.
 
 ## Adding a vinoPilot app
 
-1. A variant: if it's in vino-user-interface's `App`, it comes with `Id::App`; otherwise add one to `Id` with its name, blurb and repo.
-2. Its steps in `catalog::steps` for every channel `channels()` offers (a test fails until they exist).
-3. How to tell it's installed, in `detect::local`.
-4. A card in the window's `CARDS` (keep the grid full: it's 3 by 3), and a row in the README table.
+1. Add a component identifier: if the app is already in `vino-user-interface`'s `App` enum, it maps through `Id::App`; otherwise add a new variant to `Id` with its name, blurb, and repository.
+2. Define its scripts in `catalog::steps` for every channel returned by `channels()` (a test fails until all combinations are defined).
+3. Add local installation detection in `detect::local`.
+4. Add a card to the GUI's `CARDS` array (keeping the 3×3 grid complete) and add a row to the table in `README.md`.

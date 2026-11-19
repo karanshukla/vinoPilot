@@ -1,21 +1,21 @@
 # Security
 
-vinoPilot runs as you and runs other projects' installers. It installs nothing itself: every action is a short shell script (`vinopilot steps APP ACTION` prints it) that calls the app's own installer, `uv`, `cargo` or `git`. vinoAuthFace's actions run as root through `pkexec`, which asks for your password each time. Nothing else asks for root.
+`vinoPilot` runs under your regular user account and delegates to each project's own installer. Every action is a short shell script (inspectable with `vinopilot steps APP ACTION`) that calls the app's installer, `uv`, `cargo`, or `git`. Only `vinoAuthFace` requires elevated privileges; its privileged steps run through `pkexec` and prompt for your password each time.
 
-It goes online only when you ask: **Check for updates** / `vinopilot check` reads GitHub's releases API, PyPI's and crates.io's JSON, and runs `git fetch` in your checkouts. Installs and updates download what the app's installer downloads.
+Network requests happen only on demand: clicking **Check for updates** or running `vinopilot check` queries GitHub's releases API, PyPI, and crates.io, and runs `git fetch` in your local checkouts. Install and update actions download whatever the target app's own installer fetches.
 
 ## Reporting
 
-Use [private vulnerability reporting](https://github.com/karanshukla/vinopilot/security/advisories/new). Do not open a public issue for anything exploitable.
+Report vulnerabilities through [private vulnerability reporting](https://github.com/karanshukla/vinopilot/security/advisories/new). Do not open a public issue for anything exploitable.
 
 ## Threat model
 
-| Threat | Defence |
+| Threat | Mitigation |
 |---|---|
-| A tampered app release | Each app's installer checks its tarball or wheel against the release's `SHA256SUMS` and refuses a mismatch. vinoPilot's own release does the same for itself, and the release is signed with build provenance (`gh attestation verify`). This catches a swapped or corrupted asset, not a compromised release. |
-| A tampered installer script | Release installs fetch the app's `install.sh` over HTTPS from its latest release and run it, exactly like the one-liner each README gives. Updates prefer the checked copy the first install kept (`<app>-upgrade`). |
-| A hostile version string or tag from a registry | Tags and versions shown in the window or passed to an installer are held to letters, digits, `.`, `-`, `+` and 32 characters; anything else is dropped. |
-| Paths with shell metacharacters | The source folder and repo URLs reach scripts as environment variables, never formatted into the script text. |
-| Deleting your work | Deleting the vinoUserInterface checkout refuses when it has uncommitted changes or unpushed commits. Uninstalling an app never deletes its checkout. |
-| Root beyond vinoAuthFace | Only steps marked `root` in the catalog use `pkexec`; a test asserts that only vinoAuthFace's are. |
-| Compromised dependency or action | Crates from crates.io only (`cargo deny`), `Cargo.lock` enforced with `--locked`, every CI action pinned to a commit, Dependabot waits 7 days and nothing auto-merges. |
+| Tampered app release asset | Each app's installer verifies downloaded tarballs or wheels against the release's `SHA256SUMS` and aborts on a mismatch. `vinoPilot`'s own release does the same and includes signed build provenance (`gh attestation verify`). This catches corrupted or swapped assets, though it does not protect against a compromised upstream release. |
+| Tampered installer script | Release installs fetch the app's `install.sh` over HTTPS from its latest release, matching the command in each app's README. Updates prefer the verified local copy saved during initial installation (`<app>-upgrade`). |
+| Malicious version string or tag from a registry | Version strings and tags displayed in the UI or passed to installers are restricted to ASCII letters, digits, `.`, `-`, and `+`, with a 32-character maximum; anything else is rejected. |
+| Paths containing shell metacharacters | Checkout paths and repository URLs are passed to scripts via environment variables rather than interpolated into shell source text. |
+| Accidental deletion of local Git work | Uninstalling a source install or `vinoUserInterface` moves the checkout to the trash (`gio`, `kioclient`, or `trash-put`) only when the repo is clean, refusing if it contains uncommitted changes, unpushed commits, or stashed work. Uninstalling non-source installations never touches Git checkouts. |
+| Unintended root execution beyond `vinoAuthFace` | Only catalog steps explicitly marked `root` invoke `pkexec`, and a unit test enforces that only `vinoAuthFace` steps are marked `root`. |
+| Compromised dependency or GitHub Action | Crates are restricted to crates.io (`cargo deny`), `Cargo.lock` is enforced with `--locked`, every CI action is pinned to a commit SHA, Dependabot waits 7 days before opening PRs, and nothing auto-merges. |
