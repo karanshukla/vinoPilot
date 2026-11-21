@@ -200,9 +200,9 @@ elif [ -x "$CHECKOUT/scripts/uninstall.sh" ]; then
     "$CHECKOUT/scripts/uninstall.sh"
 else
     tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
     git clone --depth 1 "$REPO_URL" "$tmp/src"
     "$tmp/src/scripts/uninstall.sh"
-    rm -rf "$tmp"
 fi
 drop_cargo_copies vinoopeneffects vinoopeneffects-ctl vinoopeneffects-daemon
 "#;
