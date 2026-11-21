@@ -10,10 +10,10 @@ BIN="$HOME/.local/bin"
 # checks what it downloads against the release's SHA256SUMS.
 release_run() {
     local f; f="$(mktemp)"
+    trap 'rm -f "$f"' RETURN
     curl -fsSL --retry 3 --connect-timeout 20 -o "$f" "$RELEASE/$1"
     shift
     bash "$f" "$@" </dev/null
-    rm -f "$f"
 }
 # checkout: the source to install from. The base path is the checkout,
 # cloned or fast-forwarded on its default branch. On another branch,
@@ -135,7 +135,7 @@ trash_checkout() {
     fi
     [ -z "$why" ] || { echo "✗ Kept $CHECKOUT: $why" >&2; return 1; }
     if command -v gio >/dev/null && gio trash -- "$CHECKOUT"; then :
-    elif command -v kioclient >/dev/null && kioclient move "$CHECKOUT" trash:/; then :
+    elif command -v kioclient >/dev/null && kioclient move -- "$CHECKOUT" trash:/; then :
     elif command -v trash-put >/dev/null && trash-put -- "$CHECKOUT"; then :
     else
         echo "✗ Kept $CHECKOUT: no gio, kioclient or trash-put to move it to the trash with" >&2
@@ -200,9 +200,9 @@ elif [ -x "$CHECKOUT/scripts/uninstall.sh" ]; then
     "$CHECKOUT/scripts/uninstall.sh"
 else
     tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
     git clone --depth 1 "$REPO_URL" "$tmp/src"
     "$tmp/src/scripts/uninstall.sh"
-    rm -rf "$tmp"
 fi
 drop_cargo_copies vinoopeneffects vinoopeneffects-ctl vinoopeneffects-daemon
 "#;
@@ -251,9 +251,9 @@ fetch() {
 }
 as_root() {
     if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
-    need pkexec "it asks for your password; or run this as root: $*"
+    [ -x /usr/bin/pkexec ] || { echo "✗ /usr/bin/pkexec isn't installed: it asks for your password; or run this as root: $*" >&2; exit 1; }
     echo "== $* (asks for your password)"
-    pkexec "$@"
+    /usr/bin/pkexec "$@"
 }
 flatpak_scope() {
     if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user

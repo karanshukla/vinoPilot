@@ -155,17 +155,50 @@ fn command(step: &Step, env: &Env) -> Command {
 /// command line, with `SUDO_USER` for vinoAuthFace's scripts to find the
 /// desktop user.
 fn through_pkexec(script: &str, vars: &[(&str, String)]) -> Command {
-    let mut cmd = crate::command("pkexec");
+    let mut cmd = Command::new("/usr/bin/pkexec");
     cmd.arg("env");
     for (k, v) in vars {
         cmd.arg(format!("{k}={v}"));
     }
-    if let Ok(user) = std::env::var("USER") {
+    if let Some(user) = sudo_user() {
         cmd.arg(format!("SUDO_USER={user}"));
     }
     cmd.arg("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
     cmd.args(["bash", "-c", script]);
     cmd
+}
+
+fn sudo_user() -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let uid = std::fs::metadata("/proc/self").ok()?.uid();
+    if let Ok(passwd) = std::fs::read_to_string("/etc/passwd")
+        && let Some(user) = user_for_uid(&passwd, uid)
+    {
+        return Some(user);
+    }
+    std::env::var("USER").ok().filter(|u| is_safe_username(u))
+}
+
+fn user_for_uid(passwd: &str, uid: u32) -> Option<String> {
+    for line in passwd.lines() {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        let _pw = fields.next()?;
+        let line_uid: u32 = fields.next()?.parse().ok()?;
+        if line_uid == uid && is_safe_username(name) {
+            return Some(name.to_owned());
+        }
+    }
+    None
+}
+
+fn is_safe_username(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    (first.is_ascii_lowercase() || first == b'_')
+        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 fn pump(shared: Arc<Mutex<Shared>>, from: impl Read + Send + 'static, notify: Notify) {
@@ -378,7 +411,7 @@ mod tests {
     #[test]
     fn a_root_step_gets_its_variables_as_pkexec_env_arguments() {
         let cmd = command(&step(true), &env());
-        assert_eq!(cmd.get_program(), "pkexec");
+        assert_eq!(cmd.get_program(), "/usr/bin/pkexec");
         let args: Vec<_> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -395,6 +428,17 @@ mod tests {
             assert!(args.iter().any(|a| a == var), "{var} missing from {args:?}");
         }
         assert_eq!(args[args.len() - 3..], ["bash", "-c", "true"]);
+    }
+
+    #[test]
+    fn sudo_user_matches_uid_in_passwd_and_validates_username() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\nAlice:x:999:999::/home/Alice:/bin/sh\nkaran:x:1000:1000::/home/karan:/bin/bash\n";
+        assert_eq!(user_for_uid(passwd, 1000).as_deref(), Some("karan"));
+        assert_eq!(user_for_uid(passwd, 999), None);
+        assert!(is_safe_username("karan_1-a"));
+        assert!(!is_safe_username(""));
+        assert!(!is_safe_username("1karan"));
+        assert!(!is_safe_username("root;id"));
     }
 
     #[test]
