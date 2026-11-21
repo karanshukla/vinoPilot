@@ -28,10 +28,7 @@ pub fn entry(exec: &Path) -> std::io::Result<String> {
             "executable path is not valid UTF-8",
         )
     })?;
-    if exec_str
-        .bytes()
-        .any(|b| b == b'\r' || b == b'\n' || b == b'\0' || b < 0x20 || b == 0x7f)
-    {
+    if exec_str.bytes().any(|b| b < 0x20 || b == 0x7f) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "executable path contains control characters",
@@ -54,20 +51,26 @@ StartupWMClass={APP_ID}
     ))
 }
 
+/// `arg` as one argument of an `Exec` key, per the Desktop Entry spec:
+/// quoted when it has a reserved character, `"`, `` ` ``, `$` and `\` escaped
+/// with a backslash inside the quotes, `%` doubled. The key's value is also a
+/// string, whose own escaping turns each backslash into two, so `$` is
+/// written `\\$` and `\` is written `\\\\` (pinned by
+/// `tests::entry_quotes_and_escapes_special_characters_per_desktop_spec`).
 fn quote_desktop_exec_arg(arg: &str) -> String {
-    const RESERVED: &[u8] = b" \t\n\"'\\><~|&;$*?#()`";
-    let needs_quotes = arg.is_empty() || arg.bytes().any(|b| RESERVED.contains(&b) || b == b'%');
-    if !needs_quotes {
+    const RESERVED: &[u8] = b" \t\n\"'\\><~|&;$*?#()`%";
+    if !arg.is_empty() && !arg.bytes().any(|b| RESERVED.contains(&b)) {
         return arg.to_owned();
     }
     let mut out = String::with_capacity(arg.len() + 4);
     out.push('"');
     for ch in arg.chars() {
         match ch {
-            '"' | '`' | '$' | '\\' => {
-                out.push('\\');
+            '"' | '`' | '$' => {
+                out.push_str("\\\\");
                 out.push(ch);
             }
+            '\\' => out.push_str("\\\\\\\\"),
             '%' => out.push_str("%%"),
             _ => out.push(ch),
         }
@@ -134,9 +137,13 @@ mod tests {
 
     #[test]
     fn entry_quotes_and_escapes_special_characters_per_desktop_spec() {
-        let text = entry(Path::new("/home/k/My Apps/$bin\"100%")).unwrap();
+        let text = entry(Path::new("/home/k/My Apps/$bin\"100%\\x")).unwrap();
         assert!(
-            text.contains("\nExec=\"/home/k/My Apps/\\$bin\\\"100%%\"\n"),
+            text.contains(
+                r#"
+Exec="/home/k/My Apps/\\$bin\\"100%%\\\\x"
+"#
+            ),
             "{text}"
         );
     }
