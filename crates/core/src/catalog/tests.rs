@@ -449,21 +449,12 @@ fn running_as_root() -> bool {
 
 #[test]
 fn a_system_wide_flatpak_updates_through_pkexec() {
-    let step = &steps(Id::App(App::Pilot), Channel::Flatpak, Action::Install)[0];
-    assert!(
-        step.script.contains("\n    /usr/bin/pkexec \"$@\"\n"),
-        "{}",
-        step.script
-    );
-    if !have(&["bash", "curl", "sha256sum"])
-        || !std::path::Path::new("/usr/bin/pkexec").exists()
-        || running_as_root()
-    {
-        let _ = INFO_FINDS_SYSTEM;
+    if !have(&["bash", "curl", "sha256sum"]) || running_as_root() {
         return;
     }
     let pilot = Id::App(App::Pilot);
-    let _ = install_flatpak(pilot, "SHA256SUMS", true, INFO_FINDS_SYSTEM);
+    let ran = install_flatpak(pilot, "SHA256SUMS", true, INFO_FINDS_SYSTEM).unwrap();
+    assert!(ran.starts_with("pkexec install --system -y "), "{ran}");
 }
 
 #[test]
