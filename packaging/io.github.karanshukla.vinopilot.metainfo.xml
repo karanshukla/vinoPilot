@@ -11,35 +11,37 @@
   </developer>
   <description>
     <p>
-      vinoPilot is a family of apps for Linux laptops with an Intel NPU. They bring
+      vinoPilot is a suite of apps for Linux laptops with an Intel NPU, bringing
       Copilot+ PC features to Linux: live captions, face unlock, video call effects,
-      AI text tools, text-to-speech and search. Everything runs offline on the NPU
-      with OpenVINO, so there's no account or cloud service, and it's easy on the
-      battery.
+      AI text tools, text-to-speech, and local search. Everything runs locally on
+      the NPU with OpenVINO, requiring no account or cloud service while keeping
+      power usage low.
     </p>
     <p>
-      This app is the family's home: one window to install, update and uninstall
-      the rest of it.
+      This app manages the suite from a single window, letting you install,
+      update, and uninstall each component.
     </p>
     <ul>
       <li>vinoWhisper: live captions and voice typing</li>
-      <li>vinoAuthFace: unlock and sudo with your face</li>
-      <li>vinoOpenEffects: look better on video calls</li>
-      <li>vinoPop: AI actions on any text you select</li>
-      <li>vinoSpeak: natural-sounding text-to-speech</li>
-      <li>vinoSearch: find files by what they're about</li>
-      <li>vinoWatch: see what your NPU is doing</li>
-      <li>ovfetch: fetches the OpenVINO runtime the NPU needs</li>
+      <li>vinoAuthFace: face authentication for login and sudo</li>
+      <li>vinoOpenEffects: webcam background blur and studio lighting for video calls</li>
+      <li>vinoPop: AI actions on selected text</li>
+      <li>vinoSpeak: natural-sounding local text-to-speech</li>
+      <li>vinoSearch: semantic local file search</li>
+      <li>vinoWatch: live Intel NPU activity monitor</li>
+      <li>ovfetch: downloads the OpenVINO runtime required for Intel NPUs</li>
     </ul>
     <p>
-      Each app installs through its own installer from its GitHub release, checked
-      against the release's checksums, or from source, PyPI or crates.io. vinoPilot
-      also finds apps you installed before it, shows how each one got there, and
-      updates it the same way. Nothing goes online until you press Check for updates.
+      Each app installs using its own checksum-verified GitHub release installer,
+      or from source, PyPI, or crates.io. vinoPilot also detects previously
+      installed apps, shows how each one was installed, and updates it from the
+      matching source. No network requests are made until you click Check for
+      updates.
     </p>
     <p>
-      The apps install on your system, not in a sandbox: into your home folder with
-      your own tools, and vinoAuthFace system-wide, after asking for your password.
+      Managed apps install directly onto your system rather than inside a sandbox.
+      Most install into your home directory using your local tools, while
+      vinoAuthFace installs system-wide and prompts for your password.
     </p>
   </description>
   <launchable type="desktop-id">io.github.karanshukla.vinopilot.desktop</launchable>
@@ -48,7 +50,7 @@
   <url type="vcs-browser">https://github.com/karanshukla/vinopilot</url>
   <screenshots>
     <screenshot type="default">
-      <caption>The window: a card per app, with its version and how it was installed</caption>
+      <caption>The vinoPilot window showing installed versions and install methods for each app</caption>
       <image>https://raw.githubusercontent.com/karanshukla/vinopilot/main/docs/images/window-dark.png</image>
     </screenshot>
   </screenshots>

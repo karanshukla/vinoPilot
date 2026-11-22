@@ -38,7 +38,7 @@ impl Pilot {
         }
         widgets::muted(
             ui,
-            "Each app installs through its own installer, which checks what it downloads.",
+            "Each app installs using its own checksum-verified installer.",
         );
         ui.add_space(6.0);
     }
@@ -65,9 +65,9 @@ impl Pilot {
             .and_then(|local| local.installed.clone());
         if let Some(newer) = self.updated_to(installed.as_ref()) {
             if ui
-                .add(Button::primary(format!("Restart into {newer}")).small())
+                .add(Button::primary(format!("Restart to use {newer}")).small())
                 .on_hover_text(format!(
-                    "vinoPilot {newer} is installed; this window is {VERSION}"
+                    "vinoPilot {newer} is installed; currently running {VERSION}"
                 ))
                 .clicked()
             {
@@ -83,7 +83,7 @@ impl Pilot {
             return;
         }
         let how = installed.as_ref().map_or_else(
-            || "This window isn't an installed vinoPilot".to_string(),
+            || "Running from an uninstalled binary".to_string(),
             |installed| {
                 format!(
                     "Installed from {}",
@@ -158,7 +158,7 @@ impl Pilot {
                 .strong()
                 .size(15.0),
         );
-        widgets::muted(ui, "The version of this window");
+        widgets::muted(ui, "Currently running version");
         ui.add_space(6.0);
         egui::Grid::new("about-vinopilot")
             .num_columns(2)
@@ -176,10 +176,13 @@ impl Pilot {
                         };
                     }
                     None if self.scanning.is_some() => {
-                        dim(ui, "Looking…");
+                        dim(ui, "Scanning…");
                     }
                     None => {
-                        dim(ui, "Not found in ~/.local/bin, ~/.cargo/bin or a package");
+                        dim(
+                            ui,
+                            "Not found in ~/.local/bin, ~/.cargo/bin, or system packages",
+                        );
                     }
                 }
                 ui.end_row();
@@ -205,7 +208,10 @@ impl Pilot {
                             ui.label(format!("{} ({version})", tilde(path)));
                         }
                         None if part.command == "vinopilot-tui" => {
-                            dim(ui, "Not installed: uv tool install vinopilot");
+                            dim(
+                                ui,
+                                "Not installed (install with: uv tool install vinopilot)",
+                            );
                         }
                         None => {
                             dim(ui, "Not installed");
@@ -276,7 +282,7 @@ fn check_button_text(update: Update) -> (String, String) {
         Update::Unknown { reason: Some(why) } => {
             (VERSION.to_string(), format!("{why}. Check again"))
         }
-        _ => (VERSION.to_string(), "Check for a newer vinoPilot".into()),
+        _ => (VERSION.to_string(), "Check for vinoPilot updates".into()),
     }
 }
 
@@ -301,8 +307,8 @@ pub(super) fn header_width(ui: &egui::Ui, available: f32) -> f32 {
 /// What each of vinoPilot's commands is, for the About popup.
 fn part_name(command: &str) -> &'static str {
     match command {
-        "vinopilot" => "Command",
-        "vinopilot-gui" => "Window",
+        "vinopilot" => "CLI",
+        "vinopilot-gui" => "Desktop app",
         "vinopilot-tui" => "Terminal UI",
         _ => "Other",
     }
@@ -334,7 +340,7 @@ mod tests {
         assert_eq!(hover, "Check again");
         let (label, hover) = check_button_text(Update::Unknown { reason: None });
         assert_eq!(label, VERSION);
-        assert_eq!(hover, "Check for a newer vinoPilot");
+        assert_eq!(hover, "Check for vinoPilot updates");
     }
 
     #[test]

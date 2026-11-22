@@ -3,7 +3,7 @@
 Name:           vinopilot
 Version:        %{pkg_version}
 Release:        1
-Summary:        Install, update and uninstall the vinoPilot apps
+Summary:        Install, update, and uninstall the vinoPilot apps
 License:        MIT
 URL:            https://vinopilot.ca/
 ExclusiveArch:  x86_64
@@ -30,14 +30,15 @@ Recommends:     git
 Recommends:     polkit
 
 %description
-One place to install, update and uninstall the vinoPilot apps: vinoWhisper,
-vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch and
-ovfetch. Each app has its own hash-checked installer; vinoPilot knows which
-one to run, how each app got onto your machine, and whether there is
-something newer for that way in.
+Install, update, and uninstall the vinoPilot apps from one place: vinoWhisper,
+vinoAuthFace, vinoOpenEffects, vinoPop, vinoSpeak, vinoSearch, vinoWatch, and
+ovfetch. Each app ships its own checksum-verified installer; vinoPilot detects
+how each app was installed on your system, checks for updates from the matching
+source, and runs the appropriate installer.
 
-This package has the vinopilot command and the vinopilot-gui window. The
-apps themselves still install into your home, each through its own installer.
+This package includes the vinopilot CLI and the vinopilot-gui desktop app.
+Managed apps still install into your home directory through their own
+installers.
 
 %install
 cp -a %{stage}/. %{buildroot}/

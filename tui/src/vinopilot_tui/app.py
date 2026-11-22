@@ -59,7 +59,7 @@ def about(component: dict) -> Text:
         return Text(component.get("blurb", ""), style="dim")
     copies = shadowed[0]
     runs, hidden = tilde(copies["runs"]), tilde(copies["hidden"])
-    return Text(f"Two copies: {runs} runs, {hidden} doesn't", style="yellow")
+    return Text(f"Duplicate install: {runs} is active, {hidden} is shadowed", style="yellow")
 
 
 class ChooseScreen(ModalScreen[str | None]):
@@ -76,7 +76,7 @@ class ChooseScreen(ModalScreen[str | None]):
         with Vertical(classes="dialog"):
             yield Label(self.title_text, classes="title")
             yield OptionList(*(Option(label, id=key) for key, label in self.options))
-            yield Label("Enter chooses, Esc cancels", classes="hint")
+            yield Label("Press Enter to select, Esc to cancel", classes="hint")
 
     def on_mount(self) -> None:
         option_list = self.query_one(OptionList)
@@ -133,7 +133,7 @@ class TextScreen(ModalScreen[None]):
             yield Label(self.title_text, classes="title")
             with VerticalScroll():
                 yield Static(Text(self.text))
-            yield Label("Esc closes", classes="hint")
+            yield Label("Press Esc to close", classes="hint")
 
 
 class InputScreen(ModalScreen[str | None]):
@@ -148,7 +148,7 @@ class InputScreen(ModalScreen[str | None]):
         with Vertical(classes="dialog"):
             yield Label(self.title_text, classes="title")
             yield Input(value=self.value)
-            yield Label("Enter saves, Esc cancels", classes="hint")
+            yield Label("Press Enter to save, Esc to cancel", classes="hint")
 
     def on_mount(self) -> None:
         self.query_one(Input).focus()
@@ -164,13 +164,13 @@ class MissingScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
-            yield Label("The vinopilot command isn't installed", classes="title")
+            yield Label("vinopilot CLI is not installed", classes="title")
             yield Static(
-                "This terminal UI drives the vinopilot command, which does the "
-                "installing. Get it from the latest release? Its installer checks "
-                "the download against the release's SHA256SUMS and puts the command "
-                "in ~/.local/bin, no sudo.\n\n"
-                f"Or in a shell:\n  curl -fsSL {cli.INSTALLER} | bash -s -- --no-gui"
+                "This terminal UI requires the vinopilot CLI to manage apps. "
+                "Download and install it from the latest release? The installer "
+                "verifies the download against SHA256SUMS and installs into "
+                "~/.local/bin without requiring sudo.\n\n"
+                f"Or run manually:\n  curl -fsSL {cli.INSTALLER} | bash -s -- --no-gui"
             )
             with Horizontal(classes="buttons"):
                 yield Button("Install", id="install", variant="primary")
@@ -195,7 +195,7 @@ class MissingScreen(ModalScreen[bool]):
                 self.app.call_from_thread(self.dismiss, True)
                 return
             else:
-                why = event.reason or "the command still isn't there"
+                why = event.reason or "vinopilot command not found after installation"
                 self.app.call_from_thread(log.write, f"✗ Not installed: {why}")
         self.app.call_from_thread(self.query_one("#install", Button).__setattr__, "disabled", False)
 
@@ -249,7 +249,7 @@ class PilotApp(App[None]):
         if found is None:
             self.exit()
         else:
-            self.log_line("✓ Installed the vinopilot command")
+            self.log_line("✓ Installed vinopilot CLI")
             self.attach(found)
 
     def attach(self, binary: str) -> None:
@@ -257,7 +257,7 @@ class PilotApp(App[None]):
         try:
             self.version = self.pilot.version()
         except (CommandError, OSError) as e:
-            self.log_line(f"✗ {binary} won't run: {e}")
+            self.log_line(f"✗ Failed to run {binary}: {e}")
             return
         self.scan(False)
 
@@ -276,7 +276,7 @@ class PilotApp(App[None]):
     def set_scanning(self, scanning: bool, online: bool) -> None:
         self.scanning = scanning
         if scanning:
-            self.set_status("Checking for updates…" if online else "Looking…")
+            self.set_status("Checking for updates…" if online else "Scanning…")
         else:
             self.set_status()
 
@@ -321,7 +321,7 @@ class PilotApp(App[None]):
         if getattr(self, "source_root", ""):
             parts.append(f"source folder {tilde(self.source_root)}")
         if busy:
-            parts.append(busy + ("" if self.job is None else "  (Esc stops)"))
+            parts.append(busy + ("" if self.job is None else "  (press Esc to stop)"))
         elif self.checked:
             n = sum(
                 1
@@ -339,10 +339,10 @@ class PilotApp(App[None]):
         mine = f"vinoPilot {self.version}" if self.version else "vinoPilot"
         installed = (self.me.get("installed") or {}).get("version")
         if self.updated_itself and installed and installed != self.version:
-            return f"vinoPilot {installed} installed, p restarts into it"
+            return f"vinoPilot {installed} installed (press p to restart)"
         update = self.me.get("update") or {}
         if update.get("state") == "available" and self.me.get("installed"):
-            return f"{mine}, p updates to {update['to']}"
+            return f"{mine} (press p to update to {update['to']})"
         if update.get("state") == "up_to_date":
             return f"{mine} (up to date)"
         return mine
@@ -357,13 +357,16 @@ class PilotApp(App[None]):
     def ready(self) -> bool:
         """Whether an action can start now."""
         if self.pilot is None:
-            self.notify("No vinopilot command", severity="error")
+            self.notify("vinopilot CLI is not available", severity="error")
             return False
         if self.job is not None:
-            self.notify(f"{self.job.label} is still running (Esc stops it)", severity="warning")
+            self.notify(
+                f"{self.job.label} is still running (press Esc to stop)",
+                severity="warning",
+            )
             return False
         if self.scanning:
-            self.notify("Still looking", severity="warning")
+            self.notify("Scan in progress", severity="warning")
             return False
         return True
 
@@ -375,18 +378,24 @@ class PilotApp(App[None]):
         if not self.ready() or (component := self.selected()) is None:
             return
         if component.get("installed"):
-            self.notify(f"{component['name']} is already installed; use Update", severity="warning")
+            self.notify(
+                f"{component['name']} is already installed. Use Update instead.",
+                severity="warning",
+            )
             return
         channels = component.get("channels") or []
         if not channels:
-            self.notify(f"{component['name']} has nothing to install", severity="warning")
+            self.notify(
+                f"{component['name']} has no available install methods",
+                severity="warning",
+            )
             return
         if len(channels) == 1:
             self.run_job(self.pilot.install(component["id"], channels[0]))
             return
         options = [(ch, channel_label(component, ch)) for ch in channels]
         self.push_screen(
-            ChooseScreen(f"Install {component['name']} from", options),
+            ChooseScreen(f"Install {component['name']} via", options),
             lambda via: via and self.run_job(self.pilot.install(component["id"], via)),
         )
 
@@ -394,7 +403,10 @@ class PilotApp(App[None]):
         if not self.ready() or (component := self.selected()) is None:
             return
         if not component.get("installed"):
-            self.notify(f"{component['name']} isn't installed; use Install", severity="warning")
+            self.notify(
+                f"{component['name']} is not installed. Use Install instead.",
+                severity="warning",
+            )
             return
         self.run_job(self.pilot.update(component["id"]))
 
@@ -422,11 +434,14 @@ class PilotApp(App[None]):
             return
         installed = component.get("installed")
         if not installed:
-            self.notify(f"{component['name']} isn't installed", severity="warning")
+            self.notify(f"{component['name']} is not installed", severity="warning")
             return
         via = channel_label(component, installed["channel"])
         self.push_screen(
-            ConfirmScreen(f"Uninstall {component['name']} ({via})?", "y uninstalls, n keeps it"),
+            ConfirmScreen(
+                f"Uninstall {component['name']} ({via})?",
+                "Press y to uninstall or n to cancel",
+            ),
             lambda yes: yes and self.run_job(self.pilot.uninstall(component["id"])),
         )
 
@@ -443,7 +458,7 @@ class PilotApp(App[None]):
             for a in ACTIONS
         ]
         self.push_screen(
-            ChooseScreen(f"Show the steps for {component['name']}", options),
+            ChooseScreen(f"Preview steps for {component['name']}", options),
             lambda action: action and self.show_steps(component, action),
         )
 
@@ -462,13 +477,13 @@ class PilotApp(App[None]):
         except (CommandError, OSError) as e:
             self.log_line(f"✗ {e}")
             return
-        self.push_screen(TextScreen(f"{action} {component['name']}: what would run", text))
+        self.push_screen(TextScreen(f"Steps for {action} {component['name']}", text))
 
     def action_source_root(self) -> None:
         if not self.ready():
             return
         self.push_screen(
-            InputScreen("Where source checkouts go", getattr(self, "source_root", "")),
+            InputScreen("Source checkout directory", getattr(self, "source_root", "")),
             self.set_source_root,
         )
 
@@ -522,7 +537,10 @@ class PilotApp(App[None]):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="vinopilot-tui", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog="vinopilot-tui",
+        description="Terminal UI for managing the vinoPilot apps",
+    )
     parser.add_argument("--version", action="version", version=f"vinopilot-tui {__version__}")
     parser.parse_args()
     app = PilotApp()

@@ -57,7 +57,7 @@ impl Pilot {
             widgets::banner(
                 ui,
                 Tone::Warn,
-                "vinoPilot stays open until this finishes. Stop it first to close now.",
+                "Cannot close while an operation is running. Click Stop first to cancel it.",
                 |_| {},
             );
         }

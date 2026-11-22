@@ -151,12 +151,12 @@ fn title_row(ui: &mut egui::Ui, id: Id, local: &Local, copied_now: bool, copy_cl
             }
             if id.needs_root() {
                 widgets::tag(ui, Tone::Neutral, "system")
-                    .on_hover_text("Installs system-wide, so it asks for your password");
+                    .on_hover_text("Installs system-wide and prompts for your password");
             }
             if let Some(shadowed) = local.shadowed.first() {
                 widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
-                    "{} runs; {} is another install it hides.\n\
-                     Uninstall and reinstall to keep one.",
+                    "{} is active; {} is shadowed by it.\n\
+                     Uninstall and reinstall to keep a single copy.",
                     tilde(&shadowed.runs),
                     tilde(&shadowed.hidden)
                 ));
@@ -296,18 +296,15 @@ fn distro_tag(ui: &mut egui::Ui, system: &SystemPackage, copied: bool) -> bool {
         })
         .inner
         .on_hover_text(format!(
-            "{} came from your package manager, which vinoPilot doesn't uninstall.\n\
-             Click to copy the command that does:\n{}",
+            "{} was installed by your system package manager and cannot be removed by vinoPilot.\n\
+             Click to copy the removal command:\n{}",
             system.packages.join(", "),
             system.remove
         ));
     let name = if copied {
-        format!(
-            "Copied the command that removes the {} package",
-            system.kind
-        )
+        format!("Copied removal command for the {} package", system.kind)
     } else {
-        format!("Copy the command that removes the {} package", system.kind)
+        format!("Copy removal command for the {} package", system.kind)
     };
     response
         .ctx
@@ -322,7 +319,7 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
         widgets::small(
             ui,
             if looking {
-                "Looking…"
+                "Scanning…"
             } else {
                 "Not installed"
             },
@@ -339,7 +336,7 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     };
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
     if id == Id::App(vino_ui::App::Pilot) && raw.as_deref() != Some(VERSION) {
-        shown.on_hover_text(format!("This window is {VERSION}"));
+        shown.on_hover_text(format!("Currently running version {VERSION}"));
     }
 }
 

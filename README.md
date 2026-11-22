@@ -23,7 +23,7 @@ A single tool to install, update, and uninstall the [vinoPilot](https://vinopilo
 - **Source:** Clones the repository into your source directory and runs the checkout's install script.
 - **Package:** Installs via `uv tool` (for PyPI) or `cargo install` (for crates.io).
 
-`vinoPilot` maintains no private database of installed apps. Instead, it detects existing installations directly on your system, so apps you installed manually are also recognized. It stays offline until you click **Check for updates** or run `vinopilot check`. See [docs/how-it-works.md](docs/how-it-works.md) for details on install methods, detection, and limitations.
+`vinoPilot` does not maintain a private database of installed apps. Instead, it detects existing installations directly on your system, so apps you installed manually are also recognized. It stays offline until you click **Check for updates** or run `vinopilot check`. See [docs/how-it-works.md](docs/how-it-works.md) for details on install methods, detection, and limitations.
 
 ## Install
 
@@ -101,4 +101,4 @@ See the full list in [docs/how-it-works.md](docs/how-it-works.md#limits).
 | `install.sh` | One-line installer and source-checkout installer |
 | `packaging/` | Packaging metadata for `.deb`, `.rpm`, and Flatpak builds |
 
-Visit [vinopilot.ca](https://vinopilot.ca/) for the full suite of apps. Issues and pull requests are welcome—see [CONTRIBUTING.md](CONTRIBUTING.md).
+Visit [vinopilot.ca](https://vinopilot.ca/) for the full suite of apps. Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).

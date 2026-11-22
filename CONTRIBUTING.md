@@ -1,6 +1,6 @@
 # Contributing
 
-Reports from machines with different setups are especially helpful—for example, an existing app installation that `vinoPilot` detects incorrectly, or an install, update, or uninstall failure. Please attach the output of `vinopilot list --json` along with the installer log.
+Reports from machines with different setups are especially helpful, such as an existing app installation that `vinoPilot` detects incorrectly, or an install, update, or uninstall failure. Please attach the output of `vinopilot list --json` along with the installer log.
 
 ## Development setup
 

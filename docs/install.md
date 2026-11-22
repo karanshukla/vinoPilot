@@ -44,7 +44,7 @@ Prebuilt release binaries are available for Linux `x86_64` only, matching the ap
 
 Because there is no hosted Flatpak, APT, or DNF repository backing these packages, your desktop software center and system updater will not automatically notify you of new releases.
 
-In the GUI, the header version button changes to **update to vX** when a newer release is available, and to **Restart into vX** once installed. The **ⓘ** button beside it displays how `vinoPilot` was installed, its source checkout (if any), and the paths and versions of the CLI, GUI, and TUI.
+In the GUI, the header version button changes to **update to vX** when a newer release is available, and to **Restart to use vX** once installed. The **ⓘ** button beside it displays how `vinoPilot` was installed, its source checkout (if any), and the paths and versions of the CLI, GUI, and TUI.
 
 ## Uninstalling
 

@@ -28,7 +28,7 @@ You can also install with `pipx install vinopilot`. The command is named `vinopi
 | `Esc` | Stop the currently running action |
 | `q` | Quit |
 
-After an action completes, the table automatically refreshes—offline by default, or online if you had previously run an update check.
+After an action completes, the table refreshes automatically (offline by default, or online if you previously ran an update check).
 
 ## Limitations and configuration
 

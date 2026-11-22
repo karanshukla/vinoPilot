@@ -40,7 +40,7 @@ pub fn entry(exec: &Path) -> std::io::Result<String> {
 Type=Application
 Name=vinoPilot
 GenericName=App manager
-Comment=Install, update and uninstall the vinoPilot apps
+Comment=Install, update, and uninstall the vinoPilot apps
 Exec={quoted_exec}
 Icon={APP_ID}
 Terminal=false
