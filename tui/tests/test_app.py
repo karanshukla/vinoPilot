@@ -38,8 +38,8 @@ async def test_lists_components_offline(fake_bin: Path, calls) -> None:
         assert cell(app, 0, 3) == ""
         assert cell(app, 0, 4) == "Live captions and voice typing"
         assert cell(app, 2, 4) == (
-            "Two copies: /home/someone/.cargo/bin/ovfetch runs, "
-            "/home/someone/.local/bin/ovfetch doesn't"
+            "Duplicate install: /home/someone/.cargo/bin/ovfetch is active, "
+            "/home/someone/.local/bin/ovfetch is shadowed"
         )
     assert ["--json", "check"] not in calls()
 
@@ -183,7 +183,7 @@ async def test_missing_command_offers_the_installer(
         await settle(app, pilot)
         assert not isinstance(app.screen, MissingScreen)
         assert app.query_one(DataTable).row_count == 3
-        assert "✓ Installed the vinopilot command" in log_text(app)
+        assert "✓ Installed vinopilot CLI" in log_text(app)
     assert ["--json", "list"] in calls()
 
 
@@ -220,12 +220,12 @@ async def test_p_checks_then_updates_then_restarts(fake_bin: Path, calls) -> Non
         await pilot.press("p")
         await settle(app, pilot)
         assert ["--json", "check"] in calls()
-        assert app.status_text.startswith("vinoPilot 9.9.9, p updates to v10.0.0")
+        assert app.status_text.startswith("vinoPilot 9.9.9 (press p to update to v10.0.0)")
 
         await pilot.press("p")
         await settle(app, pilot)
         assert ["--json", "update", "vinopilot"] in calls()
-        assert app.status_text.startswith("vinoPilot 10.0.0 installed, p restarts into it")
+        assert app.status_text.startswith("vinoPilot 10.0.0 installed (press p to restart)")
 
         await pilot.press("p")
         await pilot.pause()

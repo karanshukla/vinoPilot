@@ -12,7 +12,7 @@ impl Pilot {
         let ctx = ui.ctx().clone();
         widgets::group_label(ui, "Settings");
         let help = format!(
-            "Source installs clone here, e.g. {}",
+            "Directory for source checkouts, e.g. {}",
             tilde(&self.paths().checkout(Id::App(vino_ui::App::Search)))
         );
         widgets::group(ui, |ui| {

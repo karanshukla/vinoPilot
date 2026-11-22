@@ -15,27 +15,27 @@ use vinopilot_core::{Config, detect, remote};
 use vinopilot_core::VERSION;
 
 const HELP: &str = "\
-vinopilot: install, update and uninstall the vinoPilot apps
+vinopilot: install, update, and uninstall the vinoPilot apps
 
 Usage: vinopilot [--source-root DIR] [--json] <command>
 
 Commands:
-  list                       what's installed, and how (offline)
-  check                      list, plus the newest version of each (online)
-  install <app> [--via WAY]  WAY: release (default), source, pypi, crates or
-                             flatpak (vinowhisper, vinosearch)
-  update <app>... | --all    update in the way each is installed
-  uninstall <app> [--yes]
+  list                       list installed apps and install methods (offline)
+  check                      list installed apps and check for updates (online)
+  install <app> [--via WAY]  install an app; WAY is release (default), source,
+                             pypi, crates, or flatpak (vinowhisper, vinosearch)
+  update <app>... | --all    update installed apps using their current install method
+  uninstall <app> [--yes]    uninstall an app
   steps <app> <install|update|uninstall> [--via WAY]
-                             print the shell an action runs, without running it
-  config [source_root [DIR]] show or set where source checkouts go
+                             print the shell script an action runs without executing it
+  config [source_root [DIR]] show or set the source checkout directory
 
 Apps: vinowhisper vinoauthface vinoopeneffects vinopop vinospeak vinosearch
-      vinowatch ovfetch vinouserinterface vinopilot (the 'vino' is optional)
+      vinowatch ovfetch vinouserinterface vinopilot (the 'vino' prefix is optional)
 
---json: list and check print one JSON document; install, update and
-uninstall print one JSON object per line: {\"event\":\"line\",\"text\":...}
-for output, then {\"event\":\"done\",...}.
+--json: list and check print a single JSON document; install, update, and
+uninstall stream one JSON object per line: {\"event\":\"line\",\"text\":...}
+for output, followed by {\"event\":\"done\",...}.
 ";
 
 struct Args {
@@ -152,8 +152,8 @@ fn parse_app(name: &str) -> Result<Id, Failure> {
 fn single_app(operands: &[String]) -> Result<Id, Failure> {
     match operands {
         [name] => parse_app(name),
-        [] => Err(Failure::Usage("name an app (see --help)".into())),
-        _ => Err(Failure::Usage("one app at a time".into())),
+        [] => Err(Failure::Usage("specify an app name (see --help)".into())),
+        _ => Err(Failure::Usage("specify one app at a time".into())),
     }
 }
 
@@ -269,13 +269,13 @@ fn print_duplicate_installs(components: &[status::Component]) {
             && !is_own_package(channel)
         {
             println!(
-                "\n{} is also a distro package, which vinopilot doesn't remove: {}",
+                "\n{} is also installed via your system package manager and cannot be removed by vinopilot: {}",
                 component.name, system.remove
             );
         }
         for shadowed in &component.local.shadowed {
             println!(
-                "\n{} is installed twice: {} runs, {} doesn't; uninstall and reinstall it to keep one",
+                "\n{} is installed in two locations: {} is active and {} is shadowed. Uninstall and reinstall to keep a single copy.",
                 component.name,
                 shadowed.runs.display(),
                 shadowed.hidden.display()
@@ -433,7 +433,7 @@ fn confirm_uninstall(id: Id, channel: Channel) -> Result<(), Failure> {
     if matches!(answer.trim(), "y" | "Y" | "yes") {
         Ok(())
     } else {
-        Err(Failure::Failed("left it installed".into()))
+        Err(Failure::Failed("uninstall cancelled".into()))
     }
 }
 
@@ -447,7 +447,7 @@ fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
         (None, Some(found), _) => found,
         (None, None, Some(remove)) => {
             return Err(Failure::Failed(format!(
-                "{} is only installed by your package manager: {remove}",
+                "{} is managed by your system package manager. Remove it with: {remove}",
                 id.name()
             )));
         }
@@ -464,7 +464,7 @@ fn uninstall(config: &Config, args: &Args, id: Id) -> Result<(), Failure> {
         && !is_own_package(Some(channel))
     {
         println!(
-            "{} is still a distro package. Remove it with: {remove}",
+            "{} is still installed as a system package. Remove it with: {remove}",
             id.name()
         );
     }

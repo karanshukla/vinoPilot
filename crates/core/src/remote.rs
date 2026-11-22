@@ -74,8 +74,8 @@ fn read_response(printed: &str, curl_succeeded: bool) -> Result<String, String> 
         "200" => Ok(body.to_string()),
         "404" => Err("not published yet".into()),
         "403" | "429" => Err("rate-limited; try again later".into()),
-        _ if !curl_succeeded => Err("offline, or the server didn't answer".into()),
-        code => Err(format!("the server said {code}")),
+        _ if !curl_succeeded => Err("offline or server unreachable".into()),
+        code => Err(format!("HTTP {code}")),
     }
 }
 
@@ -189,7 +189,7 @@ fn behind_by(git: &dyn Fn(&[&str]) -> Result<GitAnswer, String>) -> Result<u32, 
         .stdout
         .trim()
         .parse()
-        .map_err(|_| "git said something odd".into())
+        .map_err(|_| "unexpected git output".into())
 }
 
 /// Everything at once, one thread per lookup.
@@ -204,7 +204,8 @@ pub fn check(paths: &Paths) -> HashMap<Id, Latest> {
                 let package_t = id.package().map(|p| std::thread::spawn(move || package(p)));
                 let behind = checkout.join(".git").exists().then(|| behind(&checkout));
                 let join = |t: std::thread::JoinHandle<Result<String, String>>| {
-                    t.join().unwrap_or_else(|_| Err("the check crashed".into()))
+                    t.join()
+                        .unwrap_or_else(|_| Err("update check failed".into()))
                 };
                 let latest = Latest {
                     release: release_t.map(join),
@@ -247,9 +248,9 @@ mod tests {
         assert_eq!(why("Not Found\n404", true), "not published yet");
         assert_eq!(why("\n403", true), "rate-limited; try again later");
         assert_eq!(why("\n429", true), "rate-limited; try again later");
-        assert_eq!(why("oops\n500", true), "the server said 500");
-        assert_eq!(why("\n000", false), "offline, or the server didn't answer");
-        assert_eq!(why("", false), "offline, or the server didn't answer");
+        assert_eq!(why("oops\n500", true), "HTTP 500");
+        assert_eq!(why("\n000", false), "offline or server unreachable");
+        assert_eq!(why("", false), "offline or server unreachable");
     }
 
     /// A fetch that answers `body` and writes down what it was asked for.
@@ -378,7 +379,7 @@ mod tests {
         );
         assert_eq!(
             behind_by(&fake_git(true, false, Some("many"), &range)).unwrap_err(),
-            "git said something odd"
+            "unexpected git output"
         );
         let no_git = |_: &[&str]| Err("git isn't installed".to_string());
         assert_eq!(behind_by(&no_git).unwrap_err(), "git isn't installed");

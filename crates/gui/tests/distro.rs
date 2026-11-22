@@ -37,10 +37,10 @@ fn the_distro_tag_copies_the_remove_command() {
     let mut h = support::window(local, HashMap::new(), Vec::new());
     assert!(!copied(&h));
 
-    h.get_by_label("Copy the command that removes the rpm package")
+    h.get_by_label("Copy removal command for the rpm package")
         .click();
     h.step();
     assert!(copied(&h));
     h.step();
-    h.get_by_label("Copied the command that removes the rpm package");
+    h.get_by_label("Copied removal command for the rpm package");
 }

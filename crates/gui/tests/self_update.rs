@@ -86,7 +86,7 @@ fn about_shows_how_vinopilot_and_its_commands_are_installed() {
     h.get_by_label("Installed from");
     h.get_by_label("Not checked yet");
     h.get_by_label(&format!("/nowhere/.local/bin/vinopilot-gui ({INSTALLED})"));
-    h.get_by_label("Not installed: uv tool install vinopilot");
+    h.get_by_label("Not installed (install with: uv tool install vinopilot)");
 }
 
 #[test]

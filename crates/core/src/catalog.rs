@@ -63,10 +63,10 @@ impl Id {
 
     pub fn blurb(self) -> &'static str {
         match self {
-            Id::App(App::Pilot) => "This app: installs and updates the others",
+            Id::App(App::Pilot) => "Installs, updates, and uninstalls the vinoPilot apps",
             Id::App(app) => app.blurb(),
-            Id::Ovfetch => "Fetches the OpenVINO runtime an NPU needs",
-            Id::Ui => "The egui library the apps are drawn with",
+            Id::Ovfetch => "Downloads the OpenVINO runtime for Intel NPUs",
+            Id::Ui => "Shared egui component library used by the vinoPilot apps",
         }
     }
 
@@ -285,14 +285,16 @@ pub fn uninstall_note(id: Id, channel: Channel) -> String {
         && id != Id::App(App::Pilot)
     {
         return format!(
-            "Removes the app and its downloaded models. Your data and settings stay in ~/.var/app/{app_id}."
+            "Removes the app and its downloaded models. Your data and settings remain in ~/.var/app/{app_id}."
         );
     }
     let what = match id {
-        Id::App(App::Pilot) => "Removes this app. The apps it installed stay.",
+        Id::App(App::Pilot) => "Removes vinoPilot. Apps installed by vinoPilot remain installed.",
         Id::App(App::Watch) => "Removes the app.",
-        Id::App(_) => "Removes the app and its downloaded models. Your own data and settings stay.",
-        Id::Ovfetch => "Removes ovfetch. The runtime it fetched stays.",
+        Id::App(_) => {
+            "Removes the app and its downloaded models. Your data and settings remain intact."
+        }
+        Id::Ovfetch => "Removes ovfetch. Previously downloaded runtimes remain installed.",
         Id::Ui => return "Moves the checkout to the trash.".into(),
     };
     if channel == Channel::Source {
