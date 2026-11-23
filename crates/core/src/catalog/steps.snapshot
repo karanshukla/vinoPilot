@@ -976,15 +976,318 @@ trash_checkout
 --- root
 if [ -x /usr/local/bin/vinoauthface-uninstall ]; then /usr/local/bin/vinoauthface-uninstall; else bash "$CHECKOUT/uninstall.sh"; fi
 ### vinoauthface Deb Install
+--- root
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local code=0
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
+    [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
+    [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user
+    elif flatpak info --system "$APP_ID" >/dev/null 2>&1; then echo --system
+    else echo --user
+    fi
+}
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
+ALWAYS="vinoauthface vinoauthface-tray"
+OPTIONAL="vinoauthface-settings"
+touch /etc/vinoauthface-auto-setup
+want="$ALWAYS"
+for p in $OPTIONAL; do
+    if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" = "install ok installed" ]; then want="$want $p"; fi
+done
+files=()
+for p in $want; do fetch "$p-x86_64.deb"; files+=("$tmp/$p-x86_64.deb"); done
+as_root apt-get install -y "${files[@]}"
 ### vinoauthface Deb Update
+--- root
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local code=0
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
+    [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
+    [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user
+    elif flatpak info --system "$APP_ID" >/dev/null 2>&1; then echo --system
+    else echo --user
+    fi
+}
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
+ALWAYS="vinoauthface vinoauthface-tray"
+OPTIONAL="vinoauthface-settings"
+want="$ALWAYS"
+for p in $OPTIONAL; do
+    if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" = "install ok installed" ]; then want="$want $p"; fi
+done
+files=()
+for p in $want; do fetch "$p-x86_64.deb"; files+=("$tmp/$p-x86_64.deb"); done
+as_root apt-get install -y "${files[@]}"
 ### vinoauthface Deb Uninstall
 --- root
-if [ -x /usr/local/bin/vinoauthface-uninstall ]; then /usr/local/bin/vinoauthface-uninstall; else bash "$CHECKOUT/uninstall.sh"; fi
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local code=0
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
+    [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
+    [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user
+    elif flatpak info --system "$APP_ID" >/dev/null 2>&1; then echo --system
+    else echo --user
+    fi
+}
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
+ALWAYS="vinoauthface vinoauthface-tray"
+OPTIONAL="vinoauthface-settings"
+list=""
+for p in $OPTIONAL $ALWAYS; do
+    if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" = "install ok installed" ]; then list="$list $p"; fi
+done
+[ -n "$list" ] || { echo "No package of it is installed"; exit 0; }
+# shellcheck disable=SC2086 # one name per word
+as_root apt-get remove -y $list
 ### vinoauthface Rpm Install
+--- root
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local code=0
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
+    [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
+    [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user
+    elif flatpak info --system "$APP_ID" >/dev/null 2>&1; then echo --system
+    else echo --user
+    fi
+}
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
+ALWAYS="vinoauthface vinoauthface-tray"
+OPTIONAL="vinoauthface-settings"
+touch /etc/vinoauthface-auto-setup
+[ ! -e /run/ostree-booted ] || { echo "✗ This system layers packages with rpm-ostree, which vinoPilot doesn't drive" >&2; exit 1; }
+want="$ALWAYS"
+for p in $OPTIONAL; do
+    if rpm -q "$p" >/dev/null 2>&1; then want="$want $p"; fi
+done
+files=()
+for p in $want; do fetch "$p-x86_64.rpm"; files+=("$tmp/$p-x86_64.rpm"); done
+if command -v dnf >/dev/null; then as_root dnf install -y "${files[@]}"
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive install --allow-unsigned-rpm "${files[@]}"
+else as_root rpm -U "${files[@]}"
+fi
 ### vinoauthface Rpm Update
+--- root
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local code=0
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
+    [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
+    [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user
+    elif flatpak info --system "$APP_ID" >/dev/null 2>&1; then echo --system
+    else echo --user
+    fi
+}
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
+ALWAYS="vinoauthface vinoauthface-tray"
+OPTIONAL="vinoauthface-settings"
+[ ! -e /run/ostree-booted ] || { echo "✗ This system layers packages with rpm-ostree, which vinoPilot doesn't drive" >&2; exit 1; }
+want="$ALWAYS"
+for p in $OPTIONAL; do
+    if rpm -q "$p" >/dev/null 2>&1; then want="$want $p"; fi
+done
+files=()
+for p in $want; do fetch "$p-x86_64.rpm"; files+=("$tmp/$p-x86_64.rpm"); done
+if command -v dnf >/dev/null; then as_root dnf install -y "${files[@]}"
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive install --allow-unsigned-rpm "${files[@]}"
+else as_root rpm -U "${files[@]}"
+fi
 ### vinoauthface Rpm Uninstall
 --- root
-if [ -x /usr/local/bin/vinoauthface-uninstall ]; then /usr/local/bin/vinoauthface-uninstall; else bash "$CHECKOUT/uninstall.sh"; fi
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fetch() {
+    local code=0
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$1" "$RELEASE/$1" || code=$?
+    [ "$code" -ne 22 ] || { echo "✗ The latest release has no $1" >&2; exit 1; }
+    [ "$code" -eq 0 ] || { echo "✗ Couldn't download $1" >&2; exit 1; }
+    local sums
+    for sums in SHA256SUMS "$1.sha256"; do
+        : > "$tmp/want"
+        curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/sums" "$RELEASE/$sums" 2>/dev/null || continue
+        awk -v f="$1" '$2 == f || $2 == "*" f { print $1 "  " f }' "$tmp/sums" > "$tmp/want"
+        [ ! -s "$tmp/want" ] || break
+    done
+    [ -s "$tmp/want" ] || { echo "✗ The release has no checksum for $1. Nothing was installed." >&2; exit 1; }
+    (cd "$tmp" && [ "$(wc -l < want)" -eq 1 ] && sha256sum -c --strict --quiet want) \
+        || { echo "✗ $1 doesn't match its checksum. Nothing was installed." >&2; exit 1; }
+    echo "checksum verified"
+    # The package manager may read it as another user.
+    chmod 755 "$tmp"; chmod 644 "$tmp/$1"
+}
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+    need pkexec "it asks for your password; or run this as root: $*"
+    echo "== $* (asks for your password)"
+    pkexec "$@"
+}
+flatpak_scope() {
+    if flatpak info --user "$APP_ID" >/dev/null 2>&1; then echo --user
+    elif flatpak info --system "$APP_ID" >/dev/null 2>&1; then echo --system
+    else echo --user
+    fi
+}
+scoped_flatpak() {
+    local scope; scope="$(flatpak_scope)"
+    if [ "$scope" = --system ]; then as_root env LC_ALL=C flatpak "$1" --system "${@:2}"
+    else LC_ALL=C flatpak "$1" --user "${@:2}"
+    fi
+}
+ALWAYS="vinoauthface vinoauthface-tray"
+OPTIONAL="vinoauthface-settings"
+list=""
+for p in $OPTIONAL $ALWAYS; do
+    if rpm -q "$p" >/dev/null 2>&1; then list="$list $p"; fi
+done
+[ -n "$list" ] || { echo "No package of it is installed"; exit 0; }
+# shellcheck disable=SC2086 # one name per word
+if command -v dnf >/dev/null; then as_root dnf remove -y $list
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive remove $list
+else as_root rpm -e $list
+fi
 ### vinoauthface Flatpak Install
 ### vinoauthface Flatpak Update
 ### vinoauthface Flatpak Uninstall

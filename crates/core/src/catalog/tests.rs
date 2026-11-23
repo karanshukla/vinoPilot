@@ -179,6 +179,8 @@ fn channels(id: Id) -> Vec<Channel> {
     let mut all = id.channels();
     if id == Id::App(App::Pilot) {
         all.extend([Channel::Deb, Channel::Rpm, Channel::Flatpak]);
+    } else if id.release_packages().is_some() {
+        all.extend([Channel::Deb, Channel::Rpm]);
     }
     all
 }
@@ -208,7 +210,8 @@ fn vinopilots_packages_update_from_the_release_checked_and_ask_for_root_themselv
 
 #[test]
 fn no_other_component_updates_through_a_deb_or_rpm() {
-    for id in Id::ALL.into_iter().filter(|&id| id != Id::App(App::Pilot)) {
+    let ships = |id: Id| id == Id::App(App::Pilot) || id.release_packages().is_some();
+    for id in Id::ALL.into_iter().filter(|&id| !ships(id)) {
         for channel in [Channel::Deb, Channel::Rpm] {
             assert!(
                 steps(id, channel, Action::Update).is_empty(),
@@ -216,6 +219,98 @@ fn no_other_component_updates_through_a_deb_or_rpm() {
                 id.name()
             );
         }
+    }
+}
+
+const AUTHFACE: Id = Id::App(App::AuthFace);
+
+#[test]
+fn vinoauthface_offers_the_package_format_its_machine_uses() {
+    let on = |paths: &[&str]| Channel::native_package_with(|p| paths.contains(&p));
+    assert_eq!(on(&["/usr/bin/apt-get"]), Some(Channel::Deb));
+    assert_eq!(on(&["/usr/bin/dnf"]), Some(Channel::Rpm));
+    assert_eq!(on(&["/usr/bin/zypper"]), Some(Channel::Rpm));
+    assert_eq!(on(&["/usr/bin/rpm"]), Some(Channel::Rpm));
+    assert_eq!(on(&[]), None);
+    assert_eq!(
+        on(&["/run/ostree-booted", "/usr/bin/dnf", "/usr/bin/rpm"]),
+        None,
+        "an image that layers packages is not driven"
+    );
+    for (native, offered) in [
+        (
+            Some(Channel::Deb),
+            vec![Channel::Release, Channel::Source, Channel::Deb],
+        ),
+        (
+            Some(Channel::Rpm),
+            vec![Channel::Release, Channel::Source, Channel::Rpm],
+        ),
+        (None, vec![Channel::Release, Channel::Source]),
+    ] {
+        assert_eq!(AUTHFACE.channels_on(native), offered);
+    }
+    for id in Id::ALL.into_iter().filter(|&id| id != AUTHFACE) {
+        for native in [Some(Channel::Deb), Some(Channel::Rpm)] {
+            let channels = id.channels_on(native);
+            assert!(
+                !channels.contains(&Channel::Deb) && !channels.contains(&Channel::Rpm),
+                "{}",
+                id.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn vinoauthfaces_packages_are_fetched_checked_and_installed_together_as_root() {
+    for (channel, ext, manager) in [
+        (Channel::Deb, "deb", "apt-get install -y"),
+        (Channel::Rpm, "rpm", "dnf install -y"),
+    ] {
+        for action in [Action::Install, Action::Update] {
+            let steps = steps(AUTHFACE, channel, action);
+            assert_eq!(steps.len(), 1, "{channel:?} {action:?}");
+            assert!(steps[0].root, "{channel:?} {action:?}");
+            let script = &steps[0].script;
+            assert!(script.contains("ALWAYS=\"vinoauthface vinoauthface-tray\""));
+            assert!(script.contains("OPTIONAL=\"vinoauthface-settings\""));
+            assert!(
+                script.contains(&format!("fetch \"$p-x86_64.{ext}\"")),
+                "{channel:?}"
+            );
+            assert!(script.contains("sha256sum -c"), "{channel:?}");
+            assert!(script.contains(manager), "{channel:?}");
+            // One call: the packages depend on each other's exact version.
+            assert_eq!(script.matches(manager).count(), 1, "{channel:?}");
+        }
+    }
+}
+
+#[test]
+fn installing_vinoauthfaces_package_sets_it_up_and_updating_does_not_enable_anything() {
+    for channel in [Channel::Deb, Channel::Rpm] {
+        let install = &steps(AUTHFACE, channel, Action::Install)[0].script;
+        let update = &steps(AUTHFACE, channel, Action::Update)[0].script;
+        assert!(
+            install.contains("\ntouch /etc/vinoauthface-auto-setup\n"),
+            "{channel:?}"
+        );
+        assert!(!update.contains("auto-setup"), "{channel:?}");
+    }
+}
+
+#[test]
+fn uninstalling_vinoauthfaces_package_removes_only_what_is_installed_dependents_first() {
+    for channel in [Channel::Deb, Channel::Rpm] {
+        let script = &steps(AUTHFACE, channel, Action::Uninstall)[0].script;
+        assert!(steps(AUTHFACE, channel, Action::Uninstall)[0].root);
+        assert!(script.contains("for p in $OPTIONAL $ALWAYS"), "{channel:?}");
+        assert!(
+            script.contains("No package of it is installed"),
+            "{channel:?}"
+        );
+        assert!(!script.contains("fetch \""), "{channel:?}");
     }
 }
 

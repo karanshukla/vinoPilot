@@ -37,7 +37,7 @@ After a worktree install, `vinoPilot` records the installed commit in your check
 - Cargo's `~/.cargo/.crates.toml`, parsed as TOML: only keys inside the `[v1]` table count, and an unparseable file is treated as having no Cargo installs (as of 2026-11-15; earlier versions matched any quoted `name version (source)` line anywhere in the file).
 - Each binary's `--version` output (with a 2-second timeout).
 
-Installations in your home directory take precedence. If none is found, `vinoPilot` checks for its own `.deb`, `.rpm`, or Flatpak package, and for Flatpak installations of supported apps. Because a Flatpak app runs inside its sandbox, its version is read from the newest release entry in its AppStream metainfo.
+Installations in your home directory take precedence (for `vinoAuthFace`, one in `/usr/local`). If none is found, `vinoPilot` checks for its own `.deb`, `.rpm`, or Flatpak package, for the `.deb` or `.rpm` that owns `/usr/bin/vinoauthface`, and for Flatpak installations of supported apps. Because a Flatpak app runs inside its sandbox, its version is read from the newest release entry in its AppStream metainfo.
 
 ## Network access
 
@@ -77,17 +77,17 @@ Paths and settings are passed into scripts through environment variables (`$CHEC
 | `vinoSearch` | The installer forwards `--uninstall` to the release's `scripts/install.sh`. |
 | `vinoWatch` | `vinowatch-upgrade` is a copy of `install.sh` (POSIX `sh`). |
 | `vinoOpenEffects` | Newer releases support `vinoopeneffects-upgrade --uninstall`. Older releases shipped the uninstaller only in Git, so `vinoPilot` runs it from the local checkout or a shallow clone. |
-| `vinoAuthFace` | Runs as root. Source updates pull the checkout as the regular user so file ownership stays intact, then run `deploy.sh` as root. |
+| `vinoAuthFace` | Runs as root. Source updates pull the checkout as the regular user so file ownership stays intact, then run `deploy.sh` as root. Its release also has `.deb` and `.rpm` packages (`vinoauthface`, `vinoauthface-tray`, and the optional `vinoauthface-settings`), offered as `deb` on a machine with `apt-get` and as `rpm` on one with `dnf`, `zypper` or `rpm` (not on rpm-ostree). The whole step runs as root, downloads included. An install fetches and checks the core and tray packages and installs them in one call, since they depend on each other's exact version, and creates `/etc/vinoauthface-auto-setup` so the package's post-install script fetches the models and hooks PAM, as the release installer does; an update refreshes those two and the settings package if it is installed, and never enables anything. Uninstalling removes the packages and keeps the face templates and `/etc/face-auth.toml`. |
 | `ovfetch` | Distributed as a standalone binary in GitHub releases and as a binary crate on crates.io. Installing from one source removes the other's copy so it does not shadow the active binary or confuse detection. |
 | `vinoPilot` | `install.sh` builds from source when invoked inside a checkout. Its `.deb`, `.rpm`, and Flatpak packages are detected for updates/uninstalls but not offered as generic install targets, since no other component uses them. |
 | `vinoUserInterface` | A Rust library rather than an end-user app; "installed" means a local Git checkout that compiles. |
 
 ### Packages and Flatpaks
 
-Package steps (`vinoPilot`'s `.deb`/`.rpm` packages and app Flatpak bundles) include three shell helpers:
+Package steps (`vinoPilot`'s and `vinoAuthFace`'s `.deb`/`.rpm` packages, and app Flatpak bundles) include three shell helpers:
 
 - `fetch ASSET`: Downloads the named release asset and verifies it against the release's `SHA256SUMS` (just as `install.sh` verifies tarballs), falling back to `ASSET.sha256` if `SHA256SUMS` omits that asset (`vinoWhisper` writes `SHA256SUMS` before building its Flatpak bundle) or does not exist (`vinoSearch`). A mismatched checksum in `SHA256SUMS` always fails.
-- `as_root`: Wraps only the system package installation command in `pkexec`; downloading and checksum verification always run as the regular user.
+- `as_root`: Wraps only the system package installation command in `pkexec`; downloading and checksum verification run as the regular user. `vinoAuthFace`'s package steps are root steps as a whole, like its others, so there it is a plain call.
 - `scoped_flatpak`: Runs `flatpak` against whichever installation scope (`--user` or `--system`) owns the app. Fresh installs always target `--user` so no password is needed, matching the other install methods.
 
 System-wide Flatpaks invoke `as_root` instead of relying on Flatpak's built-in polkit prompt. Because GUI actions run inside systemd's user manager outside the desktop session, Flatpak's polkit check cannot locate a password agent and fails with `"not allowed for user"`, whereas `pkexec` prompts normally.

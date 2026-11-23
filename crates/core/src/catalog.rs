@@ -111,7 +111,8 @@ impl Id {
         }
     }
 
-    /// Installs under /usr/local and /etc, so every step runs through pkexec.
+    /// Installs under /usr/local and /etc, or as a package, so every step
+    /// runs through pkexec.
     pub fn needs_root(self) -> bool {
         self == Id::App(App::AuthFace)
     }
@@ -125,11 +126,34 @@ impl Id {
         }
     }
 
-    /// The ways in it offers, best first. vinoPilot's own Flatpak, like its
-    /// `.deb` and `.rpm`, is found but never offered (pinned by
+    /// The packages of its release, as `<name>-x86_64.deb` / `.rpm`, for the
+    /// components that ship them besides vinoPilot's own (found, never
+    /// offered). The first is the one the rest depend on; the later ones are
+    /// installed with it by default, and the `optional` ones only where
+    /// they already are.
+    pub fn release_packages(self) -> Option<ReleasePackages> {
+        match self {
+            Id::App(App::AuthFace) => Some(ReleasePackages {
+                always: &["vinoauthface", "vinoauthface-tray"],
+                optional: &["vinoauthface-settings"],
+            }),
+            _ => None,
+        }
+    }
+
+    /// The ways in it offers, best first. This machine's own package format
+    /// comes after the release and source, for a component that ships
+    /// packages; vinoPilot's own Flatpak, like its `.deb` and `.rpm`, is found
+    /// but never offered (pinned by
     /// `tests::only_vinowhisper_and_vinosearch_offer_their_flatpak`,
-    /// `tests::a_flatpak_is_never_the_default_way_in`).
+    /// `tests::a_flatpak_is_never_the_default_way_in`,
+    /// `tests::vinoauthface_offers_the_package_format_its_machine_uses`).
     pub fn channels(self) -> Vec<Channel> {
+        self.channels_on(Channel::native_package())
+    }
+
+    /// [`Id::channels`] on a machine whose package format is `native`.
+    pub fn channels_on(self, native: Option<Channel>) -> Vec<Channel> {
         let mut all = Vec::new();
         if self != Id::Ui {
             all.push(Channel::Release);
@@ -138,11 +162,24 @@ impl Id {
         if matches!(self.package(), Some(Package::PyPi(_) | Package::Crate(_))) {
             all.push(Channel::Package);
         }
+        if self.release_packages().is_some() {
+            all.extend(native);
+        }
         if self.flatpak().is_some() && self != Id::App(App::Pilot) {
             all.push(Channel::Flatpak);
         }
         all
     }
+}
+
+/// The `.deb`s and `.rpm`s of one component's release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReleasePackages {
+    /// Installed by an install, and by every update.
+    pub always: &'static [&'static str],
+    /// Updated only where already installed (they depend on the same
+    /// version of `always`, so one left behind would block the update).
+    pub optional: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,10 +207,11 @@ pub enum Channel {
     Source,
     /// PyPI through `uv tool`, or crates.io through `cargo install`.
     Package,
-    /// vinoPilot's own release as a `.deb`, system-wide. Like the `.rpm`,
-    /// only vinoPilot is found this way, and no `channels()` offers it.
+    /// A release's `.deb`, system-wide. vinoPilot's own is found this way
+    /// but never offered; [`Id::release_packages`] lists who else has one,
+    /// and `channels()` offers it on a machine that uses apt.
     Deb,
-    /// The same as an `.rpm`.
+    /// The same as an `.rpm`, on a machine that uses dnf, zypper or rpm.
     Rpm,
     /// The release's Flatpak bundle, for the user or system-wide: vinoPilot's
     /// own (found, not offered), and the apps that have one ([`Id::flatpak`]).
@@ -181,8 +219,8 @@ pub enum Channel {
 }
 
 impl Channel {
-    /// `release`, `source`, `package` (also `pypi`, `crates`) or `flatpak`;
-    /// `deb` and `rpm` for vinoPilot itself.
+    /// `release`, `source`, `package` (also `pypi`, `crates`), `flatpak`,
+    /// `deb` or `rpm`.
     pub fn parse(text: &str) -> Option<Channel> {
         match text.to_lowercase().as_str() {
             "release" | "binary" => Some(Channel::Release),
@@ -192,6 +230,30 @@ impl Channel {
             "rpm" => Some(Channel::Rpm),
             "flatpak" => Some(Channel::Flatpak),
             _ => None,
+        }
+    }
+
+    /// The package format this machine installs: apt's `.deb`, or the `.rpm`
+    /// of dnf, zypper or rpm. None on an image that layers packages
+    /// (rpm-ostree), which vinoPilot doesn't drive, and where there is no
+    /// package manager it knows.
+    pub fn native_package() -> Option<Channel> {
+        Channel::native_package_with(|path| std::path::Path::new(path).exists())
+    }
+
+    /// [`Channel::native_package`] given a way to ask whether a path exists.
+    pub fn native_package_with(exists: impl Fn(&str) -> bool) -> Option<Channel> {
+        if exists("/run/ostree-booted") {
+            None
+        } else if exists("/usr/bin/apt-get") {
+            Some(Channel::Deb)
+        } else if ["/usr/bin/dnf", "/usr/bin/zypper", "/usr/bin/rpm"]
+            .into_iter()
+            .any(exists)
+        {
+            Some(Channel::Rpm)
+        } else {
+            None
         }
     }
 

@@ -220,11 +220,35 @@ fn open_effects(channel: Channel, action: Action) -> Vec<Step> {
     }
 }
 
+/// A component's release packages: `$ALWAYS` and `$OPTIONAL` set, then
+/// `body`, all as root.
+fn release_packages(id: Id, body: &str) -> Vec<Step> {
+    let Some(packages) = id.release_packages() else {
+        return no_such_way_in();
+    };
+    as_root(&format!(
+        "{PACKAGE}ALWAYS=\"{}\"\nOPTIONAL=\"{}\"\n{body}",
+        packages.always.join(" "),
+        packages.optional.join(" ")
+    ))
+}
+
 /// Root throughout, but the checkout is pulled as the user so it stays the
 /// user's (pinned by
 /// `catalog::tests::vinoauthfaces_checkout_is_pulled_as_the_user_then_deployed_as_root`).
+/// Its packages are the whole step as root too (it is root for every other
+/// way in), and an install asks them to set it up as the release installer
+/// does (pinned by
+/// `catalog::tests::installing_vinoauthfaces_package_sets_it_up_and_updating_does_not_enable_anything`).
 fn auth_face(channel: Channel, action: Action) -> Vec<Step> {
+    let me = Id::App(App::AuthFace);
     match (channel, action) {
+        (Deb, Install) => release_packages(me, &format!("{AUTO_SETUP}\n{RELEASE_DEBS}")),
+        (Rpm, Install) => release_packages(me, &format!("{AUTO_SETUP}\n{RELEASE_RPMS}")),
+        (Deb, Update) => release_packages(me, RELEASE_DEBS),
+        (Rpm, Update) => release_packages(me, RELEASE_RPMS),
+        (Deb, Uninstall) => release_packages(me, RELEASE_DEBS_UNINSTALL),
+        (Rpm, Uninstall) => release_packages(me, RELEASE_RPMS_UNINSTALL),
         (Release, Install) => as_root("release_run install.sh"),
         (Release, Update) => as_root(
             r#"if [ -x /usr/local/bin/vinoauthface-upgrade ]; then /usr/local/bin/vinoauthface-upgrade </dev/null; else release_run install.sh; fi"#,

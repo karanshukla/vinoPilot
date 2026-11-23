@@ -438,9 +438,14 @@ fn flatpak(paths: &Paths, id: Id) -> Option<Installed> {
 /// vinoPilot installed as one of its release's packages: the `.deb` or
 /// `.rpm` that owns `/usr/bin/vinopilot`, else its Flatpak.
 fn packaged(paths: &Paths, system: Option<&SystemPackage>) -> Option<Installed> {
-    let Some(system) = system else {
-        return flatpak(paths, Id::App(App::Pilot));
-    };
+    release_package(paths, Id::App(App::Pilot), system)
+        .or_else(|| flatpak(paths, Id::App(App::Pilot)))
+}
+
+/// `id` installed as one of its release's packages: the `.deb` or `.rpm` that
+/// owns its first command in `/usr/bin`.
+fn release_package(paths: &Paths, id: Id, system: Option<&SystemPackage>) -> Option<Installed> {
+    let system = system?;
     let channel = if system.kind == "rpm" {
         Channel::Rpm
     } else {
@@ -448,7 +453,7 @@ fn packaged(paths: &Paths, system: Option<&SystemPackage>) -> Option<Installed> 
     };
     Some(Installed {
         channel,
-        version: ask_version(&paths.system_bin.join("vinopilot")),
+        version: ask_version(&paths.system_bin.join(commands(id).first()?)),
     })
 }
 
@@ -691,13 +696,18 @@ fn library_checkout(checkout: &Checkout) -> Installed {
     }
 }
 
-/// `id` installed outside the home: vinoPilot as its package, an app as its
-/// Flatpak. A copy in the home runs first, so it is only asked when there is
-/// none (pinned by `tests::a_copy_in_the_home_wins_over_vinopilots_flatpak`,
-/// `tests::a_copy_in_the_home_wins_over_an_apps_flatpak`).
+/// `id` installed outside the home: vinoPilot as its package, an app that
+/// ships packages as one of them, an app as its Flatpak. A copy in the home
+/// (or, for vinoAuthFace, in /usr/local) runs first, so these are only asked
+/// when there is none (pinned by
+/// `tests::a_copy_in_the_home_wins_over_vinopilots_flatpak`,
+/// `tests::a_copy_in_the_home_wins_over_an_apps_flatpak`,
+/// `tests::vinoauthfaces_package_is_the_one_that_owns_its_command`).
 fn outside_home(paths: &Paths, id: Id, system: Option<&SystemPackage>) -> Option<Installed> {
     if id == Id::App(App::Pilot) {
         packaged(paths, system)
+    } else if id.release_packages().is_some() {
+        release_package(paths, id, system)
     } else {
         flatpak(paths, id)
     }
@@ -1264,6 +1274,51 @@ mod tests {
         home.write(".local/bin/vinosearch", "");
         let found = installed_in(&home, Id::App(App::Search)).map(|i| i.channel);
         assert_eq!(found, Some(Channel::Source));
+    }
+
+    fn owned_by(kind: &'static str) -> SystemPackage {
+        SystemPackage {
+            kind,
+            packages: vec!["vinoauthface".into()],
+            remove: String::new(),
+        }
+    }
+
+    #[test]
+    fn vinoauthfaces_package_is_the_one_that_owns_its_command() {
+        let home = Scratch::new("authface-package");
+        let paths = paths_under(&home);
+        put_command(&home.join("usr/bin/vinoauthface"), "v16");
+        for (kind, channel) in [("deb", Channel::Deb), ("rpm", Channel::Rpm)] {
+            let found = outside_home(&paths, Id::App(App::AuthFace), Some(&owned_by(kind)));
+            assert_eq!(
+                found,
+                Some(Installed {
+                    channel,
+                    version: Some("16".into())
+                }),
+                "{kind}"
+            );
+        }
+        assert_eq!(
+            outside_home(&paths, Id::App(App::AuthFace), None),
+            None,
+            "a command no package owns is not a package install"
+        );
+    }
+
+    #[test]
+    fn only_vinopilot_and_vinoauthface_are_found_as_packages() {
+        let home = Scratch::new("package-owners");
+        let paths = paths_under(&home);
+        for id in Id::ALL {
+            let command = commands(id).first().copied().unwrap_or("none");
+            put_command(&home.join("usr/bin").join(command), "1.0.0");
+            let found = outside_home(&paths, id, Some(&owned_by("deb")));
+            let packaged = found.is_some_and(|i| i.channel == Channel::Deb);
+            let ships = id == Id::App(App::Pilot) || id.release_packages().is_some();
+            assert_eq!(packaged, ships, "{}", id.name());
+        }
     }
 
     #[test]

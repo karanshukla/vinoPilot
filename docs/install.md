@@ -40,7 +40,7 @@ Prebuilt release binaries are available for Linux `x86_64` only, matching the ap
 
 ## Updating
 
-`vinoPilot` updates itself using whichever method originally installed it. Clicking the version button in the GUI header (or running `vinopilot update vinopilot`) downloads the new release's Flatpak, `.deb`, or `.rpm`, verifies it against `SHA256SUMS`, and passes it to `flatpak`, `apt`, or `dnf`. `.deb` and `.rpm` updates prompt for your password for the package installation step.
+`vinoPilot` updates itself using whichever method originally installed it. Clicking the version button in the GUI header (or running `vinopilot update vinopilot`) downloads the new release's Flatpak, `.deb`, or `.rpm`, verifies it against `SHA256SUMS`, and passes it to `flatpak`, `apt`, or `dnf`. `.deb` and `.rpm` updates prompt for your password for the package installation step. `vinoAuthFace` can also be installed and updated this way (`vinopilot install vinoauthface --via deb`, or `--via rpm`): its release carries `vinoauthface`, `vinoauthface-tray` and `vinoauthface-settings` packages, and an update keeps whichever are installed on the same version.
 
 Because there is no hosted Flatpak, APT, or DNF repository backing these packages, your desktop software center and system updater will not automatically notify you of new releases.
 
