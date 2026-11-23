@@ -5,6 +5,25 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-23
+
+### Features
+
+- vinoAuthFace can be installed, updated and uninstalled from its .deb or .rpm packages, offered after release and source on its card. vinoPilot picks the one your package manager takes (apt-get for deb; dnf, zypper or rpm for rpm; nothing on rpm-ostree), checks the files against `SHA256SUMS`, and finds an existing package install. An install also lets the package fetch the models and hook PAM; an update never enables anything; an uninstall keeps your face templates.
+
+### Bug Fixes
+
+- Uninstalling vinoWhisper or vinoSearch from its Flatpak also deletes the models and cache it kept under `~/.var/app`. Transcripts, the index and settings stay.
+- The menu entry written by `vinopilot-gui --install-desktop` escapes special characters in the path to the program, so GLib no longer rejects it.
+
+### Security
+
+- Hardened how root steps are run through pkexec, how the desktop user is found for vinoAuthFace's installer, and the temporary files steps clean up.
+
+### Documentation
+
+- The README and the pages it links are shorter and clearer.
+
 ## [0.6.1] - 2026-11-17
 
 ### Bug Fixes
