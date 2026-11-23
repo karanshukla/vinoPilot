@@ -199,6 +199,22 @@ fn channels_are_listed_best_first() {
 }
 
 #[test]
+fn vinoauthface_lists_this_machines_package_format_after_release_and_source() {
+    let doc = Home::new("list-authface-channels").list();
+    let channels = component(&doc, "vinoauthface")["channels"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(channels[..2], [json!("release"), json!("source")]);
+    assert!(
+        channels[2..].is_empty()
+            || channels[2..] == [json!("deb")]
+            || channels[2..] == [json!("rpm")],
+        "{channels:?}"
+    );
+}
+
+#[test]
 fn registry_names_where_a_package_is_published() {
     let doc = Home::new("list-registry").list();
     for (id, registry) in [

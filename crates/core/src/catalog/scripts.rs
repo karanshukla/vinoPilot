@@ -284,6 +284,58 @@ elif command -v zypper >/dev/null; then as_root zypper --non-interactive remove 
 else as_root rpm -e vinopilot
 fi"#;
 
+/// Packages of one component's release (`$ALWAYS`, and `$OPTIONAL` where
+/// already installed, set above these), fetched and checked, then handed to
+/// the package manager in one go: they depend on each other's exact
+/// version. Run as root, so `as_root` is a plain call. Nothing is installed
+/// unless every file checked out.
+/// What the package's post-install script looks for before it fetches the
+/// models and hooks PAM (vinoAuthFace's docs/packaging.md); the release
+/// installer does the same, so an install here ends in the same place.
+pub(super) const AUTO_SETUP: &str = "touch /etc/vinoauthface-auto-setup";
+
+pub(super) const RELEASE_DEBS: &str = r#"want="$ALWAYS"
+for p in $OPTIONAL; do
+    if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" = "install ok installed" ]; then want="$want $p"; fi
+done
+files=()
+for p in $want; do fetch "$p-x86_64.deb"; files+=("$tmp/$p-x86_64.deb"); done
+as_root apt-get install -y "${files[@]}""#;
+
+pub(super) const RELEASE_RPMS: &str = r#"[ ! -e /run/ostree-booted ] || { echo "✗ This system layers packages with rpm-ostree, which vinoPilot doesn't drive" >&2; exit 1; }
+want="$ALWAYS"
+for p in $OPTIONAL; do
+    if rpm -q "$p" >/dev/null 2>&1; then want="$want $p"; fi
+done
+files=()
+for p in $want; do fetch "$p-x86_64.rpm"; files+=("$tmp/$p-x86_64.rpm"); done
+if command -v dnf >/dev/null; then as_root dnf install -y "${files[@]}"
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive install --allow-unsigned-rpm "${files[@]}"
+else as_root rpm -U "${files[@]}"
+fi"#;
+
+/// Removes what of `$OPTIONAL $ALWAYS` is installed, the dependents first.
+/// The package manager keeps what the packages don't own: the face
+/// templates, and the configuration.
+pub(super) const RELEASE_DEBS_UNINSTALL: &str = r#"list=""
+for p in $OPTIONAL $ALWAYS; do
+    if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" = "install ok installed" ]; then list="$list $p"; fi
+done
+[ -n "$list" ] || { echo "No package of it is installed"; exit 0; }
+# shellcheck disable=SC2086 # one name per word
+as_root apt-get remove -y $list"#;
+
+pub(super) const RELEASE_RPMS_UNINSTALL: &str = r#"list=""
+for p in $OPTIONAL $ALWAYS; do
+    if rpm -q "$p" >/dev/null 2>&1; then list="$list $p"; fi
+done
+[ -n "$list" ] || { echo "No package of it is installed"; exit 0; }
+# shellcheck disable=SC2086 # one name per word
+if command -v dnf >/dev/null; then as_root dnf remove -y $list
+elif command -v zypper >/dev/null; then as_root zypper --non-interactive remove $list
+else as_root rpm -e $list
+fi"#;
+
 /// Flatpak calls installing the commit that's already there an error; here
 /// it is nothing to do.
 pub(super) const FLATPAK_INSTALL: &str = r#"need flatpak "install it from https://flatpak.org/setup, then try again"

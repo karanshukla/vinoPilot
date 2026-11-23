@@ -52,7 +52,7 @@ The GUI displays a 3×3 grid of nine cards covering the seven apps, `ovfetch`, a
 
 - **Update all** appears once an update check finds available updates.
 - Click vinoPilot's version button in the header to check for a newer release, update vinoPilot, and restart into the new version.
-- `vinoAuthFace` installs system-wide, so its actions run via `pkexec` and prompt for your password.
+- `vinoAuthFace` installs system-wide, so its actions run via `pkexec` and prompt for your password. It can be a `.deb` or `.rpm` too (`--via deb` or `--via rpm`).
 
 The window follows your desktop's light or dark theme and automatically switches to a single column when three columns do not fit (for example, when tiled to half a laptop screen):
 

@@ -23,7 +23,8 @@ Commands:
   list                       list installed apps and install methods (offline)
   check                      list installed apps and check for updates (online)
   install <app> [--via WAY]  install an app; WAY is release (default), source,
-                             pypi, crates, or flatpak (vinowhisper, vinosearch)
+                             pypi, crates, flatpak (vinowhisper, vinosearch), or
+                             deb / rpm (vinoauthface)
   update <app>... | --all    update installed apps using their current install method
   uninstall <app> [--yes]    uninstall an app
   steps <app> <install|update|uninstall> [--via WAY]
@@ -67,7 +68,7 @@ fn parse_args(raw: impl Iterator<Item = String>) -> Result<Args, String> {
             Long("via") => {
                 let way = option_value(&mut parser, "--via")?;
                 args.via = Some(Channel::parse(&way).ok_or_else(|| {
-                    format!("--via {way}: use release, source, pypi, crates or flatpak")
+                    format!("--via {way}: use release, source, pypi, crates, flatpak, deb or rpm")
                 })?);
             }
             Long("source-root") => {
@@ -565,7 +566,7 @@ mod tests {
         assert_eq!(parse(&["--via"]).err().unwrap(), "--via needs a value");
         assert_eq!(
             parse(&["--via", "snap"]).err().unwrap(),
-            "--via snap: use release, source, pypi, crates or flatpak"
+            "--via snap: use release, source, pypi, crates, flatpak, deb or rpm"
         );
         assert_eq!(
             parse(&["--nope"]).err().unwrap(),
