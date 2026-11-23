@@ -80,21 +80,25 @@ impl Pilot {
         let ways_above = ways_go_above(channels.len(), width - 2.0 * margin - 2.0);
         let install_from = format!("Install {} from", id.name());
 
-        egui::Frame::new()
+        let margin = if confirming { 14.0 } else { 0.0 };
+        let shown = egui::Frame::new()
             .fill(if confirming {
                 palette.error_tint
             } else {
-                palette.surface
+                egui::Color32::TRANSPARENT
             })
-            .stroke(egui::Stroke::new(1.0, palette.rule))
-            .corner_radius(widgets::corner(10.0))
-            .inner_margin(egui::Margin::same(margin as i8))
+            .inner_margin(egui::Margin {
+                left: margin as i8,
+                right: margin as i8,
+                top: 12,
+                bottom: 12,
+            })
             .show(ui, |ui| {
-                ui.set_width(width - 2.0 * margin - 2.0);
-                ui.set_height(CARD_HEIGHT - 2.0 * margin - 2.0);
+                ui.set_width(width - 2.0 * margin);
+                ui.set_height(CARD_HEIGHT - 24.0);
                 ui.spacing_mut().item_spacing.y = 4.0;
 
-                title_row(ui, id, &local, copied_now, &mut copy_clicked);
+                title_row(ui, id, &local, &update, copied_now, &mut copy_clicked);
                 blurb(ui, id, &local, confirming);
                 ui.add_space(2.0);
                 status_line(ui, id, &local, &update, looking);
@@ -111,6 +115,20 @@ impl Pilot {
                     });
                 });
             });
+        let rect = shown.response.rect;
+        let painter = ui.painter();
+        if confirming {
+            painter.rect_filled(
+                egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())),
+                0.0,
+                palette.error,
+            );
+        }
+        painter.hline(
+            rect.left()..=rect.right(),
+            rect.top(),
+            egui::Stroke::new(1.0, palette.rule),
+        );
 
         self.confirm = outcome.confirm;
         if copy_clicked {
@@ -137,7 +155,14 @@ struct Ways<'a> {
     above: bool,
 }
 
-fn title_row(ui: &mut egui::Ui, id: Id, local: &Local, copied_now: bool, copy_clicked: &mut bool) {
+fn title_row(
+    ui: &mut egui::Ui,
+    id: Id,
+    local: &Local,
+    update: &Update,
+    copied_now: bool,
+    copy_clicked: &mut bool,
+) {
     ui.horizontal(|ui| {
         let name = ui.label(
             RichText::new(id.name())
@@ -145,6 +170,7 @@ fn title_row(ui: &mut egui::Ui, id: Id, local: &Local, copied_now: bool, copy_cl
                 .family(theme::semibold()),
         );
         a11y::heading(&name, id.name(), 3);
+        app_hover_preview(&name, id, local, update);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some(installed) = &local.installed {
                 widgets::tag(ui, Tone::Neutral, installed.channel.label(id));
@@ -168,6 +194,51 @@ fn title_row(ui: &mut egui::Ui, id: Id, local: &Local, copied_now: bool, copy_cl
                 *copy_clicked = true;
             }
         });
+    });
+}
+
+fn app_hover_preview(response: &egui::Response, id: Id, local: &Local, update: &Update) {
+    let title = id.name().to_owned();
+    let desc = id.blurb().to_owned();
+    let status = match (&local.installed, update) {
+        (Some(inst), Update::Available { to }) => {
+            format!("Installed via {} · {to} available", inst.channel.label(id))
+        }
+        (Some(inst), Update::UpToDate) => {
+            format!("Installed via {} · up to date", inst.channel.label(id))
+        }
+        (Some(inst), Update::Unknown { reason: Some(why) }) => {
+            format!("Installed via {} · {why}", inst.channel.label(id))
+        }
+        (Some(inst), Update::Unknown { reason: None }) => {
+            format!("Installed via {}", inst.channel.label(id))
+        }
+        (None, _) => "Not installed".to_owned(),
+    };
+    let checkout = local
+        .checkout
+        .as_ref()
+        .map(|c| format!("{} · {}", tilde(&c.path), c.describe));
+    response.clone().on_hover_ui(move |ui| {
+        let p = theme::palette(ui.ctx());
+        ui.set_max_width(280.0);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.add(
+            egui::Label::new(
+                RichText::new(&title)
+                    .size(13.5)
+                    .family(theme::semibold())
+                    .color(p.text),
+            )
+            .wrap(),
+        );
+        widgets::small(ui, &desc);
+        widgets::small(ui, &status);
+        if let Some(path) = &checkout {
+            ui.add(
+                egui::Label::new(RichText::new(path).monospace().size(11.5).color(p.muted)).wrap(),
+            );
+        }
     });
 }
 
@@ -330,7 +401,7 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     let version = label.as_deref().unwrap_or("installed");
     let (text, color) = match update {
         Update::Available { to } => (format!("{version} · {to} available"), palette.warn),
-        Update::UpToDate => (format!("{version} · up to date"), palette.accent),
+        Update::UpToDate => (format!("{version} · up to date"), palette.muted),
         Update::Unknown { reason: Some(why) } => (format!("{version} · {why}"), palette.muted),
         Update::Unknown { reason: None } => (version.to_string(), palette.text),
     };
