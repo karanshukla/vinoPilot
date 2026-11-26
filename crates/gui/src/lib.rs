@@ -30,7 +30,7 @@ pub use vinopilot_core::VERSION;
 
 /// Which subset of the catalog the grid shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Filter {
+pub(crate) enum Filter {
     All,
     Installed,
     Updates,
@@ -153,7 +153,7 @@ impl Pilot {
         self.job.as_ref().is_some_and(Job::running)
     }
 
-    pub(super) fn active_job(&self) -> Option<(Id, Action)> {
+    pub(crate) fn active_job(&self) -> Option<(Id, Action)> {
         self.job
             .as_ref()
             .filter(|j| j.running())
