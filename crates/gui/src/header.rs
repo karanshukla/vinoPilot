@@ -21,11 +21,12 @@ impl Pilot {
         let narrow = ui.available_width() < NARROW;
         let compact = vino_ui::SizeClass::for_ui(ui).is_compact();
         if !bar {
+            let pilot = std::cell::RefCell::new(self);
             widgets::responsive_bar(
                 ui,
                 NARROW,
-                |ui| self.title_line(ui, !compact),
-                |ui| self.actions(ui),
+                |ui| pilot.borrow_mut().title_line(ui, !compact),
+                |ui| pilot.borrow_mut().actions(ui),
             );
         } else if narrow {
             ui.horizontal_wrapped(|ui| {

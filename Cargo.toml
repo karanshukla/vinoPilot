@@ -12,7 +12,7 @@ homepage = "https://vinopilot.ca/"
 
 [workspace.dependencies]
 vinopilot-core = { path = "crates/core", version = "0.7.0" }
-vino-ui = { package = "vino-user-interface", git = "https://github.com/karanshukla/vinoUserInterface", rev = "b4eb9401563ac520e9c1a7ccd862caeecee47896", default-features = false }
+vino-ui = { package = "vino-user-interface", git = "https://github.com/karanshukla/vinoUserInterface", rev = "c9c21630d77b5d47743718d8edb1727e738194c6", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
