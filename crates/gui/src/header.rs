@@ -8,7 +8,8 @@ use vinopilot_core::detect::Installed;
 use vinopilot_core::job::Outcome;
 use vinopilot_core::status::Update;
 
-use crate::cards::PAGE_MAX;
+use crate::Filter;
+use crate::cards::{CARDS, PAGE_MAX};
 use crate::{Pilot, VERSION, desktop, tilde};
 
 /// Narrower than this, the header's actions go on a line of their own.
@@ -43,11 +44,36 @@ impl Pilot {
         ui.add_space(6.0);
     }
 
-    /// The title, the version button, ⓘ and, with `site`, the site.
+    /// Connected filter buttons (`All`, `Installed`, `Updates`) above the grid.
+    pub(super) fn filter_bar(&mut self, ui: &mut egui::Ui) {
+        let total = CARDS.len();
+        let installed = CARDS
+            .iter()
+            .filter(|id| self.local.get(id).is_some_and(|l| l.installed.is_some()))
+            .count();
+        let updates = self.updatable().len();
+        let all_label = format!("All ({total})");
+        let installed_label = format!("Installed ({installed})");
+        let updates_label = format!("Updates ({updates})");
+        widgets::button_group(
+            ui,
+            "Filter components",
+            &mut self.filter,
+            &[
+                (Filter::All, all_label.as_str()),
+                (Filter::Installed, installed_label.as_str()),
+                (Filter::Updates, updates_label.as_str()),
+            ],
+        );
+    }
+
+    /// The logo, title, version button, ⓘ, settings gear and, with `site`, the site.
     pub(super) fn title_line(&mut self, ui: &mut egui::Ui, site: bool) {
+        vino_ui::logo::pilot(ui, 24.0);
         widgets::title(ui, "vinoPilot");
         self.version_button(ui);
         self.about_button(ui);
+        self.settings_button(ui);
         if site {
             site_link(ui);
         }
@@ -96,7 +122,7 @@ impl Pilot {
                 if ui
                     .add_enabled(
                         !busy,
-                        Button::primary(format!("{VERSION} · update to {to}")).small(),
+                        Button::tonal(format!("{VERSION} · update to {to}")).small(),
                     )
                     .on_hover_text(format!("Update vinoPilot to {to}. {how}."))
                     .clicked()
@@ -139,6 +165,26 @@ impl Pilot {
                     .inner_margin(egui::Margin::same(8))
                     .show(ui, |ui| {
                         self.about(ui);
+                    });
+            });
+    }
+
+    /// Settings gear beside ⓘ: configures the source checkout directory without
+    /// consuming vertical space below the catalog.
+    fn settings_button(&mut self, ui: &mut egui::Ui) {
+        let gear = ui
+            .add(Button::ghost("").icon(vino_ui::Icon::Settings).small())
+            .on_hover_text("Settings");
+        gear.ctx.accesskit_node_builder(gear.id, |node| {
+            node.set_label("Settings");
+        });
+        egui::Popup::from_toggle_button_response(&gear)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::same(10))
+                    .show(ui, |ui| {
+                        self.settings_popup(ui);
                     });
             });
     }

@@ -3226,9 +3226,8 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vino-user-interface"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8b60b34ce371cd79415ed3e7f0c797064473db2e7d8cd360af5e4552adab324"
+version = "0.5.4"
+source = "git+https://github.com/karanshukla/vinoUserInterface?branch=feat/m3-expressive-controls#32eb16512c4b62367c285e8387e3173a97d2abb8"
 dependencies = [
  "egui",
  "serde_json",

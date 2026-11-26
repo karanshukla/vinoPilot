@@ -28,6 +28,14 @@ use launcher::{Entry, Launcher, job_progress, percent};
 
 pub use vinopilot_core::VERSION;
 
+/// Which subset of the catalog the grid shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Filter {
+    All,
+    Installed,
+    Updates,
+}
+
 /// What a local scan finds: each component, and vinoPilot's own commands.
 type Scan = (HashMap<Id, Local>, Vec<Part>);
 
@@ -40,8 +48,8 @@ pub struct Pilot {
     scanning: Option<Receiver<Scan>>,
     latest: HashMap<Id, Latest>,
     checking: Option<Receiver<HashMap<Id, Latest>>>,
-    /// The way each not-installed card will install from.
-    choice: HashMap<Id, Channel>,
+    /// Which subset of components the grid displays.
+    filter: Filter,
     /// The card asking "really uninstall?".
     confirm: Option<Id>,
     job: Option<Job>,
@@ -87,7 +95,7 @@ impl Pilot {
             scanning: None,
             latest,
             checking: None,
-            choice: HashMap::new(),
+            filter: Filter::All,
             confirm: None,
             job: None,
             job_settled: true,
@@ -143,6 +151,13 @@ impl Pilot {
 
     fn busy(&self) -> bool {
         self.job.as_ref().is_some_and(Job::running)
+    }
+
+    pub(super) fn active_job(&self) -> Option<(Id, Action)> {
+        self.job
+            .as_ref()
+            .filter(|j| j.running())
+            .map(|j| (j.id, j.action))
     }
 
     fn start(&mut self, ctx: &egui::Context, id: Id, channel: Channel, action: Action) {
@@ -280,6 +295,12 @@ impl Pilot {
         self.poll(&ctx);
         self.refuse_close_while_busy(&ctx);
         let palette = theme::palette(&ctx);
+        let window_w = ctx.content_rect().width();
+        let inset = if window_w >= widgets::SIDEBAR_FROM {
+            widgets::page_inset(window_w)
+        } else {
+            16.0
+        };
 
         if self.job.is_some() {
             egui::Panel::bottom("log")
@@ -294,14 +315,14 @@ impl Pilot {
         }
         let bar = self.app_title_bar;
         if bar {
-            self.title_bar(ui);
+            self.title_bar(ui, inset);
         }
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::NONE
                     .fill(palette.bg)
                     .inner_margin(egui::Margin {
-                        left: widgets::PAGE_INSET as i8,
+                        left: inset as i8,
                         right: 0,
                         top: if bar { 2 } else { 20 },
                         bottom: 0,
@@ -311,8 +332,9 @@ impl Pilot {
                 self.header_above_the_cards(ui, bar);
                 ui.add_space(6.0);
                 widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
+                    self.filter_bar(ui);
+                    ui.add_space(12.0);
                     self.grid(ui);
-                    self.settings(ui);
                 });
             });
     }
@@ -321,12 +343,12 @@ impl Pilot {
 impl Pilot {
     /// With the app's title bar, the title line becomes the bar the window
     /// is dragged by.
-    fn title_bar(&mut self, ui: &mut egui::Ui) {
-        let narrow = header_width(ui, ui.available_width() - widgets::PAGE_INSET) < NARROW;
+    fn title_bar(&mut self, ui: &mut egui::Ui, inset: f32) {
+        let narrow = header_width(ui, ui.available_width() - inset) < NARROW;
         let pilot = std::cell::RefCell::new(self);
         vino_ui::window::bar(
             ui,
-            widgets::PAGE_INSET,
+            inset,
             |ui| pilot.borrow_mut().title_line(ui, !narrow),
             |ui| {
                 if !narrow {

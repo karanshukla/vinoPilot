@@ -1,42 +1,58 @@
-//! The settings group under the cards: where source checkouts go.
+//! The settings popover in the header: where source checkouts go.
 
-use eframe::egui;
-use vino_ui::{Button, Row, widgets};
+use eframe::egui::{self, RichText};
+use vino_ui::{Button, theme, widgets};
 use vinopilot_core::catalog::Id;
 use vinopilot_core::config;
 
 use crate::{Pilot, tilde};
 
 impl Pilot {
-    pub(super) fn settings(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn settings_popup(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        widgets::group_label(ui, "Settings");
-        let help = format!(
-            "Directory for source checkouts, e.g. {}",
-            tilde(&self.paths().checkout(Id::App(vino_ui::App::Search)))
+        let p = theme::palette(&ctx);
+        ui.set_max_width(320.0);
+        ui.spacing_mut().item_spacing.y = 6.0;
+        ui.label(
+            RichText::new("Settings")
+                .size(15.0)
+                .family(theme::semibold())
+                .color(p.text),
         );
-        widgets::group(ui, |ui| {
-            Row::new("Source folder").help(&help).show(ui, |ui, named| {
-                let wanted = config::expand(self.source_field.trim(), &config::home());
-                if ui
-                    .add_enabled(
-                        wanted != self.config.source_root && !self.busy(),
-                        Button::secondary("Save").small(),
-                    )
-                    .clicked()
-                {
-                    self.config.source_root = wanted;
-                    if let Err(e) = self.config.save() {
-                        eprintln!("vinopilot: couldn't save the config: {e}");
-                    }
-                    self.rescan(&ctx);
-                }
-                named(ui.add(widgets::field(
-                    &mut self.source_field,
-                    "~/Development",
-                    220.0,
-                )));
+        widgets::small(ui, "Directory for source checkouts:");
+        widgets::mono(
+            ui,
+            &tilde(&self.paths().checkout(Id::App(vino_ui::App::Search))),
+        );
+        ui.add_space(2.0);
+        let wanted = config::expand(self.source_field.trim(), &config::home());
+        let dirty = wanted != self.config.source_root;
+        let busy = self.busy();
+        let mut apply = false;
+        ui.horizontal(|ui| {
+            let edit = ui.add_enabled(
+                !busy,
+                widgets::field(&mut self.source_field, "~/Development", 220.0),
+            );
+            ctx.accesskit_node_builder(edit.id, |node| {
+                node.set_label("Source folder");
             });
+            if dirty && !busy && edit.lost_focus() {
+                apply = true;
+            }
+            if ui
+                .add_enabled(dirty && !busy, Button::tonal("Apply").small())
+                .clicked()
+            {
+                apply = true;
+            }
         });
+        if apply {
+            self.config.source_root = wanted;
+            if let Err(e) = self.config.save() {
+                eprintln!("vinopilot: couldn't save the config: {e}");
+            }
+            self.rescan(&ctx);
+        }
     }
 }
