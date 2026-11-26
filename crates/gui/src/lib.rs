@@ -304,7 +304,7 @@ impl Pilot {
             egui::Panel::bottom("log")
                 .resizable(true)
                 .default_size(log_height)
-                .min_size(88.0)
+                .size_range(88.0..=f32::INFINITY)
                 .frame(
                     egui::Frame::NONE
                         .fill(palette.surface)
