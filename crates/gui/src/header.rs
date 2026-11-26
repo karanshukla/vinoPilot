@@ -8,7 +8,8 @@ use vinopilot_core::detect::Installed;
 use vinopilot_core::job::Outcome;
 use vinopilot_core::status::Update;
 
-use crate::cards::PAGE_MAX;
+use crate::Filter;
+use crate::cards::{CARDS, PAGE_MAX};
 use crate::{Pilot, VERSION, desktop, tilde};
 
 /// Narrower than this, the header's actions go on a line of their own.
@@ -18,23 +19,22 @@ impl Pilot {
     /// `bar`: the title line is in the window's bar, not here.
     pub(super) fn header(&mut self, ui: &mut egui::Ui, bar: bool) {
         let narrow = ui.available_width() < NARROW;
+        let compact = vino_ui::SizeClass::for_ui(ui).is_compact();
         if !bar {
-            ui.horizontal(|ui| {
-                self.title_line(ui, true);
-                if !narrow {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.actions(ui);
-                    });
+            let pilot = std::cell::RefCell::new(self);
+            widgets::responsive_bar(
+                ui,
+                NARROW,
+                |ui| pilot.borrow_mut().title_line(ui, !compact),
+                |ui| pilot.borrow_mut().actions(ui),
+            );
+        } else if narrow {
+            ui.horizontal_wrapped(|ui| {
+                self.actions(ui);
+                if !compact {
+                    site_link(ui);
                 }
             });
-        }
-        if narrow && bar {
-            ui.horizontal(|ui| {
-                self.actions(ui);
-                site_link(ui);
-            });
-        } else if narrow {
-            ui.horizontal(|ui| self.actions(ui));
         }
         widgets::muted(
             ui,
@@ -43,11 +43,36 @@ impl Pilot {
         ui.add_space(6.0);
     }
 
-    /// The title, the version button, ⓘ and, with `site`, the site.
+    /// Connected filter buttons (`All`, `Installed`, `Updates`) above the grid.
+    pub(super) fn filter_bar(&mut self, ui: &mut egui::Ui) {
+        let total = CARDS.len();
+        let installed = CARDS
+            .into_iter()
+            .filter(|id| self.local.get(id).is_some_and(|l| l.installed.is_some()))
+            .count();
+        let updates = self.updatable().len();
+        let all_label = format!("All ({total})");
+        let installed_label = format!("Installed ({installed})");
+        let updates_label = format!("Updates ({updates})");
+        widgets::button_group(
+            ui,
+            "Filter components",
+            &mut self.filter,
+            &[
+                (Filter::All, all_label.as_str()),
+                (Filter::Installed, installed_label.as_str()),
+                (Filter::Updates, updates_label.as_str()),
+            ],
+        );
+    }
+
+    /// The logo, title, version button, ⓘ, settings gear and, with `site`, the site.
     pub(super) fn title_line(&mut self, ui: &mut egui::Ui, site: bool) {
+        vino_ui::logo::pilot(ui, 24.0);
         widgets::title(ui, "vinoPilot");
         self.version_button(ui);
         self.about_button(ui);
+        self.settings_button(ui);
         if site {
             site_link(ui);
         }
@@ -96,7 +121,7 @@ impl Pilot {
                 if ui
                     .add_enabled(
                         !busy,
-                        Button::primary(format!("{VERSION} · update to {to}")).small(),
+                        Button::tonal(format!("{VERSION} · update to {to}")).small(),
                     )
                     .on_hover_text(format!("Update vinoPilot to {to}. {how}."))
                     .clicked()
@@ -143,7 +168,28 @@ impl Pilot {
             });
     }
 
+    /// Settings gear beside ⓘ: configures the source checkout directory without
+    /// consuming vertical space below the catalog.
+    fn settings_button(&mut self, ui: &mut egui::Ui) {
+        let gear = ui
+            .add(Button::ghost("").icon(vino_ui::Icon::Settings).small())
+            .on_hover_text("Settings");
+        gear.ctx.accesskit_node_builder(gear.id, |node| {
+            node.set_label("Settings");
+        });
+        egui::Popup::from_toggle_button_response(&gear)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::same(10))
+                    .show(ui, |ui| {
+                        self.settings_popup(ui);
+                    });
+            });
+    }
+
     fn about(&self, ui: &mut egui::Ui) {
+        ui.set_max_width(widgets::popup_width(ui.ctx(), 380.0));
         let muted = theme::palette(ui.ctx()).muted;
         let dim = |ui: &mut egui::Ui, text: &str| {
             ui.add(egui::Label::new(RichText::new(text).color(muted)).extend())

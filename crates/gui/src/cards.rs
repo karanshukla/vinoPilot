@@ -1,26 +1,42 @@
-//! The grid of cards, one per component: its version, how it's installed,
-//! and Install, Update and Uninstall.
+//! The catalog grid: user-facing apps and developer/runtime tools, each with
+//! its logo, status, split Install button or Update/Uninstall actions, and
+//! inline confirmation or running-job feedback.
 
 use eframe::egui::{self, RichText, vec2};
-use vino_ui::{Button, Tone, a11y, theme, widgets};
+use vino_ui::{Button, ChipKind, Icon, Tone, a11y, logo, theme, widgets};
 use vinopilot_core::catalog::{self, Action, Channel, Id};
 use vinopilot_core::detect::{Installed, Local, SystemPackage};
 use vinopilot_core::status::Update;
 
-use crate::{Pilot, VERSION, tilde};
+use crate::{Filter, Pilot, VERSION, tilde};
 
-/// Nine cards, three by three; one column when three don't fit.
-const COLUMNS: usize = 3;
-/// Wide enough for a Flatpak card's four ways in on a row of their own.
-const CARD_MIN: f32 = 290.0;
-/// Narrower inside than this, four ways in go above Install.
-const WAYS_BESIDE: f32 = 330.0;
-const CARD_HEIGHT: f32 = 172.0;
-pub(super) const GAP: f32 = 12.0;
-/// The grid stops growing here, so cards don't stretch across a 4K screen.
-pub(super) const PAGE_MAX: f32 = 3.0 * 340.0 + 2.0 * GAP;
-/// The grid, in vinopilot.ca's order. vinoPilot itself has no card: its
-/// version and update live in the header.
+/// Up to four columns on wide desktop displays; drops smoothly to 3, 2, then 1.
+const MAX_COLUMNS: usize = 4;
+/// Narrowest comfortable card width for a logo, title, tags, and split button.
+const CARD_MIN: f32 = 268.0;
+/// Minimum cell height in multi-column rows so adjacent cards align at 1x scale
+/// without clipping taller content at 2x text scale.
+const CARD_MIN_HEIGHT: f32 = 138.0;
+pub(super) const GAP: f32 = 14.0;
+const COMPACT_GAP: f32 = 10.0;
+/// The grid stops growing here, so cards don't stretch across an ultrawide screen.
+pub(super) const PAGE_MAX: f32 = 4.0 * 300.0 + 3.0 * GAP;
+
+/// End-user vinoPilot apps, in vinopilot.ca's order.
+const APPS: [Id; 7] = [
+    Id::App(vino_ui::App::Whisper),
+    Id::App(vino_ui::App::AuthFace),
+    Id::App(vino_ui::App::OpenEffects),
+    Id::App(vino_ui::App::Pop),
+    Id::App(vino_ui::App::Speak),
+    Id::App(vino_ui::App::Search),
+    Id::App(vino_ui::App::Watch),
+];
+
+/// Developer and runtime components managed alongside the apps.
+const TOOLS: [Id; 2] = [Id::Ovfetch, Id::Ui];
+
+/// Every card in catalog order. vinoPilot itself lives in the header.
 pub(super) const CARDS: [Id; 9] = [
     Id::App(vino_ui::App::Whisper),
     Id::App(vino_ui::App::AuthFace),
@@ -34,39 +50,75 @@ pub(super) const CARDS: [Id; 9] = [
 ];
 
 impl Pilot {
-    pub(super) fn grid(&mut self, ui: &mut egui::Ui) {
-        let width = ui.available_width();
-        let columns = columns_in(width);
-        let card = (width - GAP * (columns - 1) as f32) / columns as f32;
-        for chunk in CARDS.chunks(columns) {
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = GAP;
-                for id in chunk {
-                    ui.allocate_ui_with_layout(
-                        vec2(card, CARD_HEIGHT),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| self.card(ui, *id, card),
-                    );
-                }
-            });
-            ui.add_space(GAP);
+    fn matches_filter(&self, id: Id) -> bool {
+        match self.filter {
+            Filter::All => true,
+            Filter::Installed => self.local.get(&id).is_some_and(|l| l.installed.is_some()),
+            Filter::Updates => matches!(self.update(id), Update::Available { .. }),
         }
     }
 
-    fn card(&mut self, ui: &mut egui::Ui, id: Id, width: f32) {
+    pub(super) fn grid(&mut self, ui: &mut egui::Ui) {
+        let apps: Vec<Id> = APPS
+            .into_iter()
+            .filter(|id| self.matches_filter(*id))
+            .collect();
+        let tools: Vec<Id> = TOOLS
+            .into_iter()
+            .filter(|id| self.matches_filter(*id))
+            .collect();
+        if apps.is_empty() && tools.is_empty() {
+            let message = match self.filter {
+                Filter::Updates => "Everything is up to date.",
+                Filter::Installed => "No components are installed yet.",
+                Filter::All => "No components found.",
+            };
+            widgets::empty_state(ui, message, |ui| {
+                if ui.add(Button::ghost("Show all").small()).clicked() {
+                    self.filter = Filter::All;
+                }
+            });
+            return;
+        }
+        if !apps.is_empty() {
+            self.card_rows(ui, &apps);
+        }
+        if !tools.is_empty() {
+            widgets::group_label(ui, "Developer & runtime");
+            ui.add_space(6.0);
+            self.card_rows(ui, &tools);
+        }
+    }
+
+    fn card_rows(&mut self, ui: &mut egui::Ui, ids: &[Id]) {
+        let gap = if vino_ui::SizeClass::for_ui(ui).is_compact() {
+            COMPACT_GAP
+        } else {
+            GAP
+        };
+        let single_column =
+            widgets::grid_columns(ui.available_width(), CARD_MIN, gap, MAX_COLUMNS) == 1;
+        widgets::responsive_grid(ui, ids, CARD_MIN, gap, MAX_COLUMNS, |ui, id, card_w| {
+            self.card(ui, *id, card_w, single_column);
+        });
+    }
+
+    fn card(&mut self, ui: &mut egui::Ui, id: Id, width: f32, single_column: bool) {
         let ctx = ui.ctx().clone();
         let palette = theme::palette(&ctx);
         let local = self.local.get(&id).cloned().unwrap_or_default();
         let update = self.update(id);
         let confirming = self.confirm == Some(id);
-        let margin = 14.0;
+        let running_here = self
+            .active_job()
+            .filter(|(job_id, _)| *job_id == id)
+            .map(|(_, action)| action);
         let busy = self.busy();
         let mut outcome = Outcome {
             intent: None,
             confirm: self.confirm,
         };
         let channels = id.channels();
-        let choice = self.choice.entry(id).or_insert(channels[0]);
         let looking = self.scanning.is_some() && self.local.is_empty();
         let now = ctx.input(|input| input.time);
         let copied_now = self
@@ -76,44 +128,75 @@ impl Pilot {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(COPIED_FOR));
         }
         let mut copy_clicked = false;
-        let options: Vec<(Channel, &str)> = channels.iter().map(|c| (*c, c.label(id))).collect();
-        let ways_above = ways_go_above(channels.len(), width - 2.0 * margin - 2.0);
-        let install_from = format!("Install {} from", id.name());
+        let install_from = format!("Install {} options", id.name());
 
-        let margin = if confirming { 14.0 } else { 0.0 };
+        let tinted = confirming || running_here.is_some();
+        let margin = if tinted { 12.0 } else { 0.0 };
+        let vertical_pad = if single_column { 10 } else { 12 };
+        let fill = if confirming {
+            palette.error_tint
+        } else if running_here.is_some() {
+            palette.tint
+        } else {
+            egui::Color32::TRANSPARENT
+        };
         let shown = egui::Frame::new()
-            .fill(if confirming {
-                palette.error_tint
-            } else {
-                egui::Color32::TRANSPARENT
-            })
+            .fill(fill)
             .inner_margin(egui::Margin {
                 left: margin as i8,
                 right: margin as i8,
-                top: 12,
-                bottom: 12,
+                top: vertical_pad,
+                bottom: vertical_pad,
             })
             .show(ui, |ui| {
-                ui.set_width(width - 2.0 * margin);
-                ui.set_height(CARD_HEIGHT - 24.0);
+                ui.set_width((width - 2.0 * margin).max(1.0));
+                if !single_column {
+                    ui.set_min_height(CARD_MIN_HEIGHT - 24.0);
+                }
                 ui.spacing_mut().item_spacing.y = 4.0;
+                let top = ui.cursor().top();
 
-                title_row(ui, id, &local, &update, copied_now, &mut copy_clicked);
+                title_row(
+                    ui,
+                    id,
+                    &local,
+                    &update,
+                    width - 2.0 * margin,
+                    copied_now,
+                    &mut copy_clicked,
+                );
                 blurb(ui, id, &local, confirming);
                 ui.add_space(2.0);
                 status_line(ui, id, &local, &update, looking);
                 checkout_note(ui, &local, confirming);
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    ui.add_enabled_ui(!busy && !looking, |ui| {
-                        let ways = Ways {
-                            choice,
-                            options: &options,
-                            label: &install_from,
-                            above: ways_above,
-                        };
-                        action_buttons(ui, id, &local, &update, confirming, ways, &mut outcome);
+
+                if single_column {
+                    ui.add_space(6.0);
+                } else {
+                    let used = ui.cursor().top() - top;
+                    let pad = (CARD_MIN_HEIGHT - 24.0 - used - widgets::SMALL_HEIGHT).max(8.0);
+                    ui.add_space(pad);
+                }
+
+                if let Some(action) = running_here {
+                    ui.horizontal(|ui| {
+                        widgets::spinner(ui);
+                        widgets::chip(ui, ChipKind::Neutral, &format!("{}…", action.verb()));
                     });
-                });
+                } else {
+                    ui.add_enabled_ui(!busy && !looking, |ui| {
+                        action_buttons(
+                            ui,
+                            id,
+                            &local,
+                            &update,
+                            confirming,
+                            &channels,
+                            &install_from,
+                            &mut outcome,
+                        );
+                    });
+                }
             });
         let rect = shown.response.rect;
         let painter = ui.painter();
@@ -122,6 +205,12 @@ impl Pilot {
                 egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())),
                 0.0,
                 palette.error,
+            );
+        } else if running_here.is_some() {
+            painter.rect_filled(
+                egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())),
+                0.0,
+                palette.accent,
             );
         }
         painter.hline(
@@ -147,58 +236,81 @@ struct Outcome {
     confirm: Option<Id>,
 }
 
-/// The ways in a card offers, and whether they sit above Install.
-struct Ways<'a> {
-    choice: &'a mut Channel,
-    options: &'a [(Channel, &'a str)],
-    label: &'a str,
-    above: bool,
+fn component_badge(ui: &mut egui::Ui, id: Id) {
+    match id {
+        Id::App(app) => {
+            logo::app(ui, app, 22.0);
+        }
+        Id::Ovfetch => {
+            widgets::file_tile(ui, Icon::Hardware, 22.0);
+        }
+        Id::Ui => {
+            widgets::file_tile(ui, Icon::Flask, 22.0);
+        }
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn title_row(
     ui: &mut egui::Ui,
     id: Id,
     local: &Local,
     update: &Update,
+    width: f32,
     copied_now: bool,
     copy_clicked: &mut bool,
 ) {
+    let has_tags = local.installed.is_some()
+        || id.needs_root()
+        || !local.shadowed.is_empty()
+        || local.system_package.is_some();
+    let draw_tags = |ui: &mut egui::Ui, copy_clicked: &mut bool| {
+        if let Some(installed) = &local.installed {
+            widgets::tag(ui, Tone::Neutral, installed.channel.label(id));
+        }
+        if id.needs_root() {
+            widgets::tag(ui, Tone::Neutral, "system")
+                .on_hover_text("Installs system-wide and prompts for your password");
+        }
+        if let Some(shadowed) = local.shadowed.first() {
+            widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
+                "{} is active; {} is shadowed by it.\n\
+                 Uninstall and reinstall to keep a single copy.",
+                tilde(&shadowed.runs),
+                tilde(&shadowed.hidden)
+            ));
+        }
+        if let Some(system) = &local.system_package
+            && distro_tag(ui, system, copied_now)
+        {
+            ui.ctx().copy_text(system.remove.clone());
+            *copy_clicked = true;
+        }
+    };
+    let stack_tags = has_tags && width < 290.0;
     ui.horizontal(|ui| {
+        component_badge(ui, id);
         let name = ui.label(
             RichText::new(id.name())
                 .size(15.0)
                 .family(theme::semibold()),
         );
         a11y::heading(&name, id.name(), 3);
-        app_hover_preview(&name, id, local, update);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(installed) = &local.installed {
-                widgets::tag(ui, Tone::Neutral, installed.channel.label(id));
-            }
-            if id.needs_root() {
-                widgets::tag(ui, Tone::Neutral, "system")
-                    .on_hover_text("Installs system-wide and prompts for your password");
-            }
-            if let Some(shadowed) = local.shadowed.first() {
-                widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
-                    "{} is active; {} is shadowed by it.\n\
-                     Uninstall and reinstall to keep a single copy.",
-                    tilde(&shadowed.runs),
-                    tilde(&shadowed.hidden)
-                ));
-            }
-            if let Some(system) = &local.system_package
-                && distro_tag(ui, system, copied_now)
-            {
-                ui.ctx().copy_text(system.remove.clone());
-                *copy_clicked = true;
-            }
-        });
+        app_hover_preview(name, id, local, update);
+        if !stack_tags {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                draw_tags(ui, copy_clicked);
+            });
+        }
     });
+    if stack_tags {
+        ui.horizontal_wrapped(|ui| {
+            draw_tags(ui, copy_clicked);
+        });
+    }
 }
 
-fn app_hover_preview(response: &egui::Response, id: Id, local: &Local, update: &Update) {
-    let title = id.name().to_owned();
+fn app_hover_preview(response: egui::Response, id: Id, local: &Local, update: &Update) {
     let desc = id.blurb().to_owned();
     let status = match (&local.installed, update) {
         (Some(inst), Update::Available { to }) => {
@@ -219,25 +331,11 @@ fn app_hover_preview(response: &egui::Response, id: Id, local: &Local, update: &
         .checkout
         .as_ref()
         .map(|c| format!("{} · {}", tilde(&c.path), c.describe));
-    response.clone().on_hover_ui(move |ui| {
-        let p = theme::palette(ui.ctx());
-        ui.set_max_width(280.0);
-        ui.spacing_mut().item_spacing.y = 4.0;
-        ui.add(
-            egui::Label::new(
-                RichText::new(&title)
-                    .size(13.5)
-                    .family(theme::semibold())
-                    .color(p.text),
-            )
-            .wrap(),
-        );
-        widgets::small(ui, &desc);
-        widgets::small(ui, &status);
+    widgets::hover_card(response, id.name(), move |ui| {
+        widgets::small(ui, desc);
+        widgets::small(ui, status);
         if let Some(path) = &checkout {
-            ui.add(
-                egui::Label::new(RichText::new(path).monospace().size(11.5).color(p.muted)).wrap(),
-            );
+            widgets::mono(ui, path);
         }
     });
 }
@@ -256,36 +354,55 @@ fn blurb(ui: &mut egui::Ui, id: Id, local: &Local, confirming: bool) {
 }
 
 fn checkout_note(ui: &mut egui::Ui, local: &Local, confirming: bool) {
-    let palette = theme::palette(ui.ctx());
     if let Some(checkout) = local.checkout.as_ref().filter(|_| !confirming) {
         let text = format!("{} · {}", tilde(&checkout.path), checkout.describe);
-        ui.add(egui::Label::new(RichText::new(&text).size(12.0).color(palette.muted)).truncate())
-            .on_hover_text(format!("Source checkout: {text}"));
+        widgets::mono(ui, &text).on_hover_text(format!("Source checkout: {text}"));
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn action_buttons(
     ui: &mut egui::Ui,
     id: Id,
     local: &Local,
     update: &Update,
     confirming: bool,
-    ways: Ways,
+    channels: &[Channel],
+    install_from: &str,
     outcome: &mut Outcome,
 ) {
-    let Ways {
-        choice,
-        options,
-        label: install_from,
-        above: ways_above,
-    } = ways;
     ui.horizontal_wrapped(|ui| match &local.installed {
         None => {
-            if ui.add(Button::primary("Install").small()).clicked() {
-                outcome.intent = Some((*choice, Action::Install));
-            }
-            if options.len() > 1 && !ways_above {
-                widgets::segmented(ui, install_from, choice, options);
+            let default_channel = channels[0];
+            if channels.len() > 1 {
+                let split = widgets::split_button(
+                    ui,
+                    Button::tonal("Install").small(),
+                    install_from,
+                    |ui| {
+                        ui.set_min_width(170.0);
+                        for &channel in channels {
+                            let label = format!("Install from {}", channel.label(id));
+                            if ui.button(label).clicked() {
+                                outcome.intent = Some((channel, Action::Install));
+                                ui.close();
+                            }
+                        }
+                    },
+                );
+                if split
+                    .primary
+                    .on_hover_text(format!("Install from {}", default_channel.label(id)))
+                    .clicked()
+                {
+                    outcome.intent = Some((default_channel, Action::Install));
+                }
+            } else if ui
+                .add(Button::tonal("Install").small())
+                .on_hover_text(format!("Install from {}", default_channel.label(id)))
+                .clicked()
+            {
+                outcome.intent = Some((default_channel, Action::Install));
             }
         }
         Some(installed) if confirming => {
@@ -303,7 +420,7 @@ fn action_buttons(
         }
         Some(installed) => {
             let button = if matches!(update, Update::Available { .. }) {
-                Button::primary("Update")
+                Button::tonal("Update")
             } else {
                 Button::secondary("Update")
             };
@@ -320,25 +437,6 @@ fn action_buttons(
             }
         }
     });
-    // Bottom-up: this lands above the row just drawn.
-    if local.installed.is_none() && ways_above {
-        widgets::segmented(ui, install_from, choice, options);
-    }
-}
-
-/// Three columns when three cards of `CARD_MIN` fit in `width`, else one.
-fn columns_in(width: f32) -> usize {
-    if width + GAP >= COLUMNS as f32 * (CARD_MIN + GAP) {
-        COLUMNS
-    } else {
-        1
-    }
-}
-
-/// Whether a card `inner` wide puts its ways in on a row above Install:
-/// only four of them, and only when they don't fit beside it.
-fn ways_go_above(ways: usize, inner: f32) -> bool {
-    ways > 3 && inner < WAYS_BESIDE
 }
 
 /// How long a distro tag says "copied".
@@ -415,29 +513,37 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
 mod tests {
     use super::*;
 
+    fn cols(width: f32) -> usize {
+        widgets::grid_columns(width, CARD_MIN, GAP, MAX_COLUMNS)
+    }
+
+    #[test]
+    fn four_cards_that_fit_are_four_columns() {
+        let four = 4.0 * CARD_MIN + 3.0 * GAP;
+        assert_eq!(cols(four), 4);
+        assert_eq!(cols(PAGE_MAX), 4);
+    }
+
     #[test]
     fn three_cards_that_fit_are_three_columns() {
-        let fits = COLUMNS as f32 * CARD_MIN + (COLUMNS - 1) as f32 * GAP;
-        assert_eq!(columns_in(fits), COLUMNS);
-        assert_eq!(columns_in(PAGE_MAX), COLUMNS);
+        let four = 4.0 * CARD_MIN + 3.0 * GAP;
+        let three = 3.0 * CARD_MIN + 2.0 * GAP;
+        assert_eq!(cols(four - 1.0), 3);
+        assert_eq!(cols(three), 3);
     }
 
     #[test]
-    fn a_pixel_short_of_three_cards_is_one_column() {
-        let fits = COLUMNS as f32 * CARD_MIN + (COLUMNS - 1) as f32 * GAP;
-        assert_eq!(columns_in(fits - 1.0), 1);
-        assert_eq!(columns_in(420.0), 1);
+    fn two_cards_that_fit_are_two_columns() {
+        let three = 3.0 * CARD_MIN + 2.0 * GAP;
+        let two = 2.0 * CARD_MIN + GAP;
+        assert_eq!(cols(three - 1.0), 2);
+        assert_eq!(cols(two), 2);
     }
 
     #[test]
-    fn four_ways_in_go_above_install_on_a_card_too_narrow_for_them() {
-        assert!(ways_go_above(4, WAYS_BESIDE - 1.0));
-        assert!(!ways_go_above(4, WAYS_BESIDE));
-    }
-
-    #[test]
-    fn three_ways_in_stay_beside_install_however_narrow() {
-        assert!(!ways_go_above(3, WAYS_BESIDE - 1.0));
-        assert!(!ways_go_above(1, 0.0));
+    fn a_narrow_window_is_one_column() {
+        let two = 2.0 * CARD_MIN + GAP;
+        assert_eq!(cols(two - 1.0), 1);
+        assert_eq!(cols(340.0), 1);
     }
 }

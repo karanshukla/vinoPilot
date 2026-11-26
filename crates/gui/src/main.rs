@@ -38,8 +38,8 @@ fn main() -> eframe::Result {
             egui::ViewportBuilder::default()
                 .with_title("vinoPilot")
                 .with_app_id("io.github.karanshukla.vinopilot")
-                .with_inner_size([1000.0, 720.0])
-                .with_min_inner_size([360.0, 360.0]),
+                .with_inner_size([960.0, 680.0])
+                .with_min_inner_size([340.0, 320.0]),
             app_title_bar,
         ),
         ..Default::default()

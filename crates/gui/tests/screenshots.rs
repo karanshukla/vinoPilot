@@ -203,7 +203,7 @@ fn save(image: &image::RgbaImage, name: &str) {
 #[test]
 #[ignore = "needs a GPU or lavapipe; regenerates docs/images"]
 fn screenshots() {
-    save(&render(true, 1000.0, 720.0), "window-dark");
-    save(&render(false, 1000.0, 720.0), "window-light");
-    save(&render(true, 420.0, 720.0), "narrow-dark");
+    save(&render(true, 960.0, 680.0), "window-dark");
+    save(&render(false, 960.0, 680.0), "window-light");
+    save(&render(true, 420.0, 680.0), "narrow-dark");
 }
