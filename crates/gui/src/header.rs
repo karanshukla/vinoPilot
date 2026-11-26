@@ -19,23 +19,21 @@ impl Pilot {
     /// `bar`: the title line is in the window's bar, not here.
     pub(super) fn header(&mut self, ui: &mut egui::Ui, bar: bool) {
         let narrow = ui.available_width() < NARROW;
+        let compact = vino_ui::SizeClass::for_ui(ui).is_compact();
         if !bar {
-            ui.horizontal(|ui| {
-                self.title_line(ui, true);
-                if !narrow {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.actions(ui);
-                    });
+            widgets::responsive_bar(
+                ui,
+                NARROW,
+                |ui| self.title_line(ui, !compact),
+                |ui| self.actions(ui),
+            );
+        } else if narrow {
+            ui.horizontal_wrapped(|ui| {
+                self.actions(ui);
+                if !compact {
+                    site_link(ui);
                 }
             });
-        }
-        if narrow && bar {
-            ui.horizontal(|ui| {
-                self.actions(ui);
-                site_link(ui);
-            });
-        } else if narrow {
-            ui.horizontal(|ui| self.actions(ui));
         }
         widgets::muted(
             ui,
@@ -48,7 +46,7 @@ impl Pilot {
     pub(super) fn filter_bar(&mut self, ui: &mut egui::Ui) {
         let total = CARDS.len();
         let installed = CARDS
-            .iter()
+            .into_iter()
             .filter(|id| self.local.get(id).is_some_and(|l| l.installed.is_some()))
             .count();
         let updates = self.updatable().len();
@@ -190,6 +188,7 @@ impl Pilot {
     }
 
     fn about(&self, ui: &mut egui::Ui) {
+        ui.set_max_width(widgets::popup_width(ui.ctx(), 380.0));
         let muted = theme::palette(ui.ctx()).muted;
         let dim = |ui: &mut egui::Ui, text: &str| {
             ui.add(egui::Label::new(RichText::new(text).color(muted)).extend())

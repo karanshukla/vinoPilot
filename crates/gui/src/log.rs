@@ -29,8 +29,10 @@ impl Pilot {
         let lines = job.lines();
         let mut close = false;
         let mut stop = false;
-        ui.horizontal(|ui| {
-            match &outcome {
+        widgets::responsive_bar(
+            ui,
+            480.0,
+            |ui| match &outcome {
                 Outcome::Running => {
                     widgets::spinner(ui);
                     a11y::live(&widgets::chip(ui, ChipKind::Neutral, &title));
@@ -52,14 +54,15 @@ impl Pilot {
                         &format!("{title}: failed"),
                     ));
                 }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            },
+            |ui| {
                 if outcome == Outcome::Running {
                     if ui.add(Button::secondary("Stop").small()).clicked() {
                         stop = true;
                     }
                     if let Some(fraction) = progress {
-                        widgets::progress(ui, fraction as f32, 120.0);
+                        let bar_w = ui.available_width().clamp(64.0, 120.0);
+                        widgets::progress(ui, fraction as f32, bar_w);
                     }
                 } else {
                     if ui.add(Button::ghost("Close").small()).clicked() {
@@ -69,8 +72,8 @@ impl Pilot {
                         widgets::copy_button(ui, &lines.join("\n"), "Copy log");
                     }
                 }
-            });
-        });
+            },
+        );
         if stop {
             job.stop();
             self.queue.clear();

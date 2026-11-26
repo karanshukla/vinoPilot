@@ -10,16 +10,17 @@ use vinopilot_core::status::Update;
 
 use crate::{Filter, Pilot, VERSION, tilde};
 
-/// Up to three columns wide; drops to two, then one.
-const MAX_COLUMNS: usize = 3;
+/// Up to four columns on wide desktop displays; drops smoothly to 3, 2, then 1.
+const MAX_COLUMNS: usize = 4;
 /// Narrowest comfortable card width for a logo, title, tags, and split button.
-const CARD_MIN: f32 = 276.0;
-/// Minimum cell height so adjacent cards in a row align at 1x scale without
-/// clipping taller content at 2x text scale.
+const CARD_MIN: f32 = 268.0;
+/// Minimum cell height in multi-column rows so adjacent cards align at 1x scale
+/// without clipping taller content at 2x text scale.
 const CARD_MIN_HEIGHT: f32 = 138.0;
 pub(super) const GAP: f32 = 14.0;
-/// The grid stops growing here, so cards don't stretch across a 4K screen.
-pub(super) const PAGE_MAX: f32 = 3.0 * 340.0 + 2.0 * GAP;
+const COMPACT_GAP: f32 = 10.0;
+/// The grid stops growing here, so cards don't stretch across an ultrawide screen.
+pub(super) const PAGE_MAX: f32 = 4.0 * 300.0 + 3.0 * GAP;
 
 /// End-user vinoPilot apps, in vinopilot.ca's order.
 const APPS: [Id; 7] = [
@@ -90,25 +91,19 @@ impl Pilot {
     }
 
     fn card_rows(&mut self, ui: &mut egui::Ui, ids: &[Id]) {
-        let width = ui.available_width();
-        let columns = columns_in(width);
-        let card = (width - GAP * (columns - 1) as f32) / columns as f32;
-        for chunk in ids.chunks(columns) {
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = GAP;
-                for id in chunk {
-                    ui.allocate_ui_with_layout(
-                        vec2(card, CARD_MIN_HEIGHT),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| self.card(ui, *id, card),
-                    );
-                }
-            });
-            ui.add_space(GAP);
-        }
+        let gap = if vino_ui::SizeClass::for_ui(ui).is_compact() {
+            COMPACT_GAP
+        } else {
+            GAP
+        };
+        let single_column =
+            widgets::grid_columns(ui.available_width(), CARD_MIN, gap, MAX_COLUMNS) == 1;
+        widgets::responsive_grid(ui, ids, CARD_MIN, gap, MAX_COLUMNS, |ui, id, card_w| {
+            self.card(ui, *id, card_w, single_column);
+        });
     }
 
-    fn card(&mut self, ui: &mut egui::Ui, id: Id, width: f32) {
+    fn card(&mut self, ui: &mut egui::Ui, id: Id, width: f32, single_column: bool) {
         let ctx = ui.ctx().clone();
         let palette = theme::palette(&ctx);
         let local = self.local.get(&id).cloned().unwrap_or_default();
@@ -137,6 +132,7 @@ impl Pilot {
 
         let tinted = confirming || running_here.is_some();
         let margin = if tinted { 12.0 } else { 0.0 };
+        let vertical_pad = if single_column { 10 } else { 12 };
         let fill = if confirming {
             palette.error_tint
         } else if running_here.is_some() {
@@ -149,24 +145,38 @@ impl Pilot {
             .inner_margin(egui::Margin {
                 left: margin as i8,
                 right: margin as i8,
-                top: 12,
-                bottom: 12,
+                top: vertical_pad,
+                bottom: vertical_pad,
             })
             .show(ui, |ui| {
-                ui.set_width(width - 2.0 * margin);
-                ui.set_min_height(CARD_MIN_HEIGHT - 24.0);
+                ui.set_width((width - 2.0 * margin).max(1.0));
+                if !single_column {
+                    ui.set_min_height(CARD_MIN_HEIGHT - 24.0);
+                }
                 ui.spacing_mut().item_spacing.y = 4.0;
                 let top = ui.cursor().top();
 
-                title_row(ui, id, &local, &update, copied_now, &mut copy_clicked);
+                title_row(
+                    ui,
+                    id,
+                    &local,
+                    &update,
+                    width - 2.0 * margin,
+                    copied_now,
+                    &mut copy_clicked,
+                );
                 blurb(ui, id, &local, confirming);
                 ui.add_space(2.0);
                 status_line(ui, id, &local, &update, looking);
                 checkout_note(ui, &local, confirming);
 
-                let used = ui.cursor().top() - top;
-                let pad = (CARD_MIN_HEIGHT - 24.0 - used - widgets::SMALL_HEIGHT).max(8.0);
-                ui.add_space(pad);
+                if single_column {
+                    ui.add_space(6.0);
+                } else {
+                    let used = ui.cursor().top() - top;
+                    let pad = (CARD_MIN_HEIGHT - 24.0 - used - widgets::SMALL_HEIGHT).max(8.0);
+                    ui.add_space(pad);
+                }
 
                 if let Some(action) = running_here {
                     ui.horizontal(|ui| {
@@ -240,14 +250,44 @@ fn component_badge(ui: &mut egui::Ui, id: Id) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn title_row(
     ui: &mut egui::Ui,
     id: Id,
     local: &Local,
     update: &Update,
+    width: f32,
     copied_now: bool,
     copy_clicked: &mut bool,
 ) {
+    let has_tags = local.installed.is_some()
+        || id.needs_root()
+        || !local.shadowed.is_empty()
+        || local.system_package.is_some();
+    let draw_tags = |ui: &mut egui::Ui, copy_clicked: &mut bool| {
+        if let Some(installed) = &local.installed {
+            widgets::tag(ui, Tone::Neutral, installed.channel.label(id));
+        }
+        if id.needs_root() {
+            widgets::tag(ui, Tone::Neutral, "system")
+                .on_hover_text("Installs system-wide and prompts for your password");
+        }
+        if let Some(shadowed) = local.shadowed.first() {
+            widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
+                "{} is active; {} is shadowed by it.\n\
+                 Uninstall and reinstall to keep a single copy.",
+                tilde(&shadowed.runs),
+                tilde(&shadowed.hidden)
+            ));
+        }
+        if let Some(system) = &local.system_package
+            && distro_tag(ui, system, copied_now)
+        {
+            ui.ctx().copy_text(system.remove.clone());
+            *copy_clicked = true;
+        }
+    };
+    let stack_tags = has_tags && width < 290.0;
     ui.horizontal(|ui| {
         component_badge(ui, id);
         let name = ui.label(
@@ -257,30 +297,17 @@ fn title_row(
         );
         a11y::heading(&name, id.name(), 3);
         app_hover_preview(name, id, local, update);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(installed) = &local.installed {
-                widgets::tag(ui, Tone::Neutral, installed.channel.label(id));
-            }
-            if id.needs_root() {
-                widgets::tag(ui, Tone::Neutral, "system")
-                    .on_hover_text("Installs system-wide and prompts for your password");
-            }
-            if let Some(shadowed) = local.shadowed.first() {
-                widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
-                    "{} is active; {} is shadowed by it.\n\
-                     Uninstall and reinstall to keep a single copy.",
-                    tilde(&shadowed.runs),
-                    tilde(&shadowed.hidden)
-                ));
-            }
-            if let Some(system) = &local.system_package
-                && distro_tag(ui, system, copied_now)
-            {
-                ui.ctx().copy_text(system.remove.clone());
-                *copy_clicked = true;
-            }
-        });
+        if !stack_tags {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                draw_tags(ui, copy_clicked);
+            });
+        }
     });
+    if stack_tags {
+        ui.horizontal_wrapped(|ui| {
+            draw_tags(ui, copy_clicked);
+        });
+    }
 }
 
 fn app_hover_preview(response: egui::Response, id: Id, local: &Local, update: &Update) {
@@ -412,19 +439,6 @@ fn action_buttons(
     });
 }
 
-/// Three columns when three cards of `CARD_MIN` fit, two when two fit, else one
-/// (pinned by `tests::three_cards_that_fit_are_three_columns`,
-/// `tests::two_cards_that_fit_are_two_columns`, and
-/// `tests::a_narrow_window_is_one_column`).
-fn columns_in(width: f32) -> usize {
-    for cols in (2..=MAX_COLUMNS).rev() {
-        if width + GAP >= cols as f32 * (CARD_MIN + GAP) {
-            return cols;
-        }
-    }
-    1
-}
-
 /// How long a distro tag says "copied".
 const COPIED_FOR: f64 = 1.5;
 
@@ -499,25 +513,37 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
 mod tests {
     use super::*;
 
+    fn cols(width: f32) -> usize {
+        widgets::grid_columns(width, CARD_MIN, GAP, MAX_COLUMNS)
+    }
+
+    #[test]
+    fn four_cards_that_fit_are_four_columns() {
+        let four = 4.0 * CARD_MIN + 3.0 * GAP;
+        assert_eq!(cols(four), 4);
+        assert_eq!(cols(PAGE_MAX), 4);
+    }
+
     #[test]
     fn three_cards_that_fit_are_three_columns() {
-        let fits = MAX_COLUMNS as f32 * CARD_MIN + (MAX_COLUMNS - 1) as f32 * GAP;
-        assert_eq!(columns_in(fits), 3);
-        assert_eq!(columns_in(PAGE_MAX), 3);
+        let four = 4.0 * CARD_MIN + 3.0 * GAP;
+        let three = 3.0 * CARD_MIN + 2.0 * GAP;
+        assert_eq!(cols(four - 1.0), 3);
+        assert_eq!(cols(three), 3);
     }
 
     #[test]
     fn two_cards_that_fit_are_two_columns() {
         let three = 3.0 * CARD_MIN + 2.0 * GAP;
         let two = 2.0 * CARD_MIN + GAP;
-        assert_eq!(columns_in(three - 1.0), 2);
-        assert_eq!(columns_in(two), 2);
+        assert_eq!(cols(three - 1.0), 2);
+        assert_eq!(cols(two), 2);
     }
 
     #[test]
     fn a_narrow_window_is_one_column() {
         let two = 2.0 * CARD_MIN + GAP;
-        assert_eq!(columns_in(two - 1.0), 1);
-        assert_eq!(columns_in(420.0), 1);
+        assert_eq!(cols(two - 1.0), 1);
+        assert_eq!(cols(340.0), 1);
     }
 }

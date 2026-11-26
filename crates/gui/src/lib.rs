@@ -295,21 +295,20 @@ impl Pilot {
         self.poll(&ctx);
         self.refuse_close_while_busy(&ctx);
         let palette = theme::palette(&ctx);
-        let window_w = ctx.content_rect().width();
-        let inset = if window_w >= widgets::SIDEBAR_FROM {
-            widgets::page_inset(window_w)
-        } else {
-            16.0
-        };
+        let content_rect = ctx.content_rect();
+        let inset = widgets::content_inset(content_rect.width());
+        let compact = vino_ui::SizeClass::of(content_rect.width()).is_compact();
 
         if self.job.is_some() {
+            let log_height = (content_rect.height() * 0.34).clamp(110.0, 220.0);
             egui::Panel::bottom("log")
                 .resizable(true)
-                .default_size(220.0)
+                .default_size(log_height)
+                .min_size(88.0)
                 .frame(
                     egui::Frame::NONE
                         .fill(palette.surface)
-                        .inner_margin(egui::Margin::same(12)),
+                        .inner_margin(egui::Margin::same(if compact { 10 } else { 12 })),
                 )
                 .show(ui, |ui| self.log(ui));
         }
@@ -324,7 +323,13 @@ impl Pilot {
                     .inner_margin(egui::Margin {
                         left: inset as i8,
                         right: 0,
-                        top: if bar { 2 } else { 20 },
+                        top: if bar {
+                            2
+                        } else if compact {
+                            12
+                        } else {
+                            20
+                        },
                         bottom: 0,
                     }),
             )
@@ -333,7 +338,7 @@ impl Pilot {
                 ui.add_space(6.0);
                 widgets::page_scroll(ui, "vinoPilot", PAGE_MAX, |ui| {
                     self.filter_bar(ui);
-                    ui.add_space(12.0);
+                    ui.add_space(if compact { 8.0 } else { 12.0 });
                     self.grid(ui);
                 });
             });

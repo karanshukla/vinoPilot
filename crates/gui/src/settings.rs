@@ -11,7 +11,8 @@ impl Pilot {
     pub(super) fn settings_popup(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let p = theme::palette(&ctx);
-        ui.set_max_width(320.0);
+        let max_w = widgets::popup_width(&ctx, 320.0);
+        ui.set_max_width(max_w);
         ui.spacing_mut().item_spacing.y = 6.0;
         ui.label(
             RichText::new("Settings")
@@ -29,10 +30,11 @@ impl Pilot {
         let dirty = wanted != self.config.source_root;
         let busy = self.busy();
         let mut apply = false;
-        ui.horizontal(|ui| {
+        let field_w = (max_w - 80.0).clamp(130.0, 220.0);
+        ui.horizontal_wrapped(|ui| {
             let edit = ui.add_enabled(
                 !busy,
-                widgets::field(&mut self.source_field, "~/Development", 220.0),
+                widgets::field(&mut self.source_field, "~/Development", field_w),
             );
             ctx.accesskit_node_builder(edit.id, |node| {
                 node.set_label("Source folder");

@@ -3227,7 +3227,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vino-user-interface"
 version = "0.5.4"
-source = "git+https://github.com/karanshukla/vinoUserInterface?rev=23b4d8d4e867296548be6f54f884948be415bbe9#23b4d8d4e867296548be6f54f884948be415bbe9"
+source = "git+https://github.com/karanshukla/vinoUserInterface?rev=b4eb9401563ac520e9c1a7ccd862caeecee47896#b4eb9401563ac520e9c1a7ccd862caeecee47896"
 dependencies = [
  "egui",
  "serde_json",
