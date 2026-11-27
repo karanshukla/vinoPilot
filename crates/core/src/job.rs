@@ -285,7 +285,7 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
         let status = loop {
             let mut s = shared.lock().unwrap();
             let Some(child) = s.child.as_mut() else {
-                return Outcome::Failed("lost the process".into());
+                return Outcome::Failed("Process ended unexpectedly".into());
             };
             match child.try_wait() {
                 Ok(Some(status)) => {
@@ -308,9 +308,7 @@ fn run(shared: &Arc<Mutex<Shared>>, steps: &[Step], env: &Env, notify: &Notify) 
                     .code()
                     .is_some_and(|code| PKEXEC_REFUSED.contains(&code))
             {
-                return Outcome::Failed(
-                    "Not authorised: the password prompt was cancelled.".into(),
-                );
+                return Outcome::Failed("Password prompt was cancelled.".into());
             }
             let lines = shared.lock().unwrap().lines.clone();
             return Outcome::Failed(

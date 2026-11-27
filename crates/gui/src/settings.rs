@@ -20,10 +20,13 @@ impl Pilot {
                 .family(theme::semibold())
                 .color(p.text),
         );
-        widgets::small(ui, "Directory for source checkouts:");
+        widgets::small(ui, "Source folder");
         widgets::mono(
             ui,
-            &tilde(&self.paths().checkout(Id::App(vino_ui::App::Search))),
+            &format!(
+                "Example: {}",
+                tilde(&self.paths().checkout(Id::App(vino_ui::App::Search)))
+            ),
         );
         ui.add_space(2.0);
         let wanted = config::expand(self.source_field.trim(), &config::home());

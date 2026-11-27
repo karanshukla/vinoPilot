@@ -3,6 +3,7 @@
 
 use eframe::egui::{self, RichText};
 use vino_ui::{Button, ChipKind, Tone, a11y, widgets};
+use vinopilot_core::catalog::Action;
 use vinopilot_core::job::Outcome;
 
 use crate::Pilot;
@@ -14,12 +15,20 @@ impl Pilot {
         let remaining = self.queue.len();
         let Some(job) = &self.job else { return };
         let outcome = job.outcome();
-        let base_title = format!(
-            "{} {} from {}",
-            job.action.verb(),
-            job.id.name(),
-            job.channel.label(job.id)
-        );
+        let base_title = match job.action {
+            Action::Uninstall => format!(
+                "{} {} ({})",
+                job.action.verb(),
+                job.id.name(),
+                job.channel.label(job.id)
+            ),
+            Action::Install | Action::Update => format!(
+                "{} {} from {}",
+                job.action.verb(),
+                job.id.name(),
+                job.channel.label(job.id)
+            ),
+        };
         let title = if batch > 1 && outcome == Outcome::Running {
             let current = batch.saturating_sub(remaining);
             format!("{base_title} ({current} of {batch})")
@@ -82,13 +91,19 @@ impl Pilot {
         if let Outcome::Failed(why) = &outcome {
             widgets::banner(ui, Tone::Error, why, |_| {});
         }
-        if self.close_refused.is_some() && outcome == Outcome::Running {
-            widgets::banner(
+        if self.close_refused.is_some()
+            && outcome == Outcome::Running
+            && widgets::banner(
                 ui,
                 Tone::Warn,
-                "Cannot close while an operation is running. Click Stop first to cancel it.",
-                |_| {},
-            );
+                "Stop the running task before closing.",
+                |ui| ui.add(Button::secondary("Stop & close").small()).clicked(),
+            )
+        {
+            job.stop();
+            self.queue.clear();
+            self.batch = 0;
+            self.close_after_stop = true;
         }
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])

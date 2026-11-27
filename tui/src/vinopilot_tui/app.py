@@ -59,7 +59,7 @@ def about(component: dict) -> Text:
         return Text(component.get("blurb", ""), style="dim")
     copies = shadowed[0]
     runs, hidden = tilde(copies["runs"]), tilde(copies["hidden"])
-    return Text(f"Duplicate install: {runs} is active, {hidden} is shadowed", style="yellow")
+    return Text(f"2 copies: using {runs} ({hidden} ignored)", style="yellow")
 
 
 class ChooseScreen(ModalScreen[str | None]):
@@ -76,7 +76,7 @@ class ChooseScreen(ModalScreen[str | None]):
         with Vertical(classes="dialog"):
             yield Label(self.title_text, classes="title")
             yield OptionList(*(Option(label, id=key) for key, label in self.options))
-            yield Label("Press Enter to select, Esc to cancel", classes="hint")
+            yield Label("Enter select · Esc cancel", classes="hint")
 
     def on_mount(self) -> None:
         option_list = self.query_one(OptionList)
@@ -89,15 +89,24 @@ class ChooseScreen(ModalScreen[str | None]):
 
 class ConfirmScreen(ModalScreen[bool]):
     BINDINGS = [
-        Binding("y", "dismiss(True)", "Yes"),
-        Binding("n", "dismiss(False)", "No"),
+        Binding("y", "dismiss(True)", "Confirm"),
+        Binding("n", "dismiss(False)", "Cancel"),
         Binding("escape", "dismiss(False)", "Cancel", show=False),
     ]
 
-    def __init__(self, question: str, detail: str = "") -> None:
+    def __init__(
+        self,
+        question: str,
+        detail: str = "",
+        *,
+        confirm_label: str = "Confirm",
+        cancel_label: str = "Cancel",
+    ) -> None:
         super().__init__()
         self.question = question
         self.detail = detail
+        self.confirm_label = confirm_label
+        self.cancel_label = cancel_label
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
@@ -105,8 +114,8 @@ class ConfirmScreen(ModalScreen[bool]):
             if self.detail:
                 yield Static(self.detail)
             with Horizontal(classes="buttons"):
-                yield Button("Yes", id="yes", variant="error")
-                yield Button("No", id="no", variant="primary")
+                yield Button(self.confirm_label, id="yes", variant="error")
+                yield Button(self.cancel_label, id="no", variant="primary")
 
     def on_mount(self) -> None:
         self.query_one("#no", Button).focus()
@@ -133,7 +142,6 @@ class TextScreen(ModalScreen[None]):
             yield Label(self.title_text, classes="title")
             with VerticalScroll():
                 yield Static(Text(self.text))
-            yield Label("Press Esc to close", classes="hint")
 
 
 class InputScreen(ModalScreen[str | None]):
@@ -148,7 +156,7 @@ class InputScreen(ModalScreen[str | None]):
         with Vertical(classes="dialog"):
             yield Label(self.title_text, classes="title")
             yield Input(value=self.value)
-            yield Label("Press Enter to save, Esc to cancel", classes="hint")
+            yield Label("Enter save · Esc cancel", classes="hint")
 
     def on_mount(self) -> None:
         self.query_one(Input).focus()
@@ -164,13 +172,10 @@ class MissingScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
-            yield Label("vinopilot CLI is not installed", classes="title")
+            yield Label("vinopilot CLI isn't installed", classes="title")
             yield Static(
-                "This terminal UI requires the vinopilot CLI to manage apps. "
-                "Download and install it from the latest release? The installer "
-                "verifies the download against SHA256SUMS and installs into "
-                "~/.local/bin without requiring sudo.\n\n"
-                f"Or run manually:\n  curl -fsSL {cli.INSTALLER} | bash -s -- --no-gui"
+                "The vinopilot CLI is needed to manage apps. Install it to ~/.local/bin now?\n\n"
+                f"Manual install:\n  curl -fsSL {cli.INSTALLER} | bash -s -- --no-gui"
             )
             with Horizontal(classes="buttons"):
                 yield Button("Install", id="install", variant="primary")
@@ -357,7 +362,7 @@ class PilotApp(App[None]):
     def ready(self) -> bool:
         """Whether an action can start now."""
         if self.pilot is None:
-            self.notify("vinopilot CLI is not available", severity="error")
+            self.notify("vinopilot CLI isn't available.", severity="error")
             return False
         if self.job is not None:
             self.notify(
@@ -379,7 +384,7 @@ class PilotApp(App[None]):
             return
         if component.get("installed"):
             self.notify(
-                f"{component['name']} is already installed. Use Update instead.",
+                f"{component['name']} is already installed — press u to update.",
                 severity="warning",
             )
             return
@@ -404,7 +409,7 @@ class PilotApp(App[None]):
             return
         if not component.get("installed"):
             self.notify(
-                f"{component['name']} is not installed. Use Install instead.",
+                f"{component['name']} isn't installed — press i to install.",
                 severity="warning",
             )
             return
@@ -434,13 +439,13 @@ class PilotApp(App[None]):
             return
         installed = component.get("installed")
         if not installed:
-            self.notify(f"{component['name']} is not installed", severity="warning")
+            self.notify(f"{component['name']} isn't installed.", severity="warning")
             return
         via = channel_label(component, installed["channel"])
         self.push_screen(
             ConfirmScreen(
                 f"Uninstall {component['name']} ({via})?",
-                "Press y to uninstall or n to cancel",
+                confirm_label="Uninstall",
             ),
             lambda yes: yes and self.run_job(self.pilot.uninstall(component["id"])),
         )
@@ -483,7 +488,7 @@ class PilotApp(App[None]):
         if not self.ready():
             return
         self.push_screen(
-            InputScreen("Source checkout directory", getattr(self, "source_root", "")),
+            InputScreen("Source folder", getattr(self, "source_root", "")),
             self.set_source_root,
         )
 

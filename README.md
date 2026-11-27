@@ -48,13 +48,13 @@ See [docs/install.md](docs/install.md) for the non-root one-line installer, crat
 
 ## Desktop window
 
-The GUI displays a 3×3 grid of nine cards covering the seven apps, `ovfetch`, and `vinoUserInterface`. Each card shows its installed version, install method, and an **Update** or **Install** button. Before installing an app, use the card's selector to choose the install method. Installer output streams into a panel at the bottom with a **Stop** button.
+The GUI displays a responsive grid of cards for the eight apps (including `vinoPilot` itself) plus a **Developer & runtime** section for `ovfetch` and `vinoUserInterface`, with **All**, **Installed**, and **Updates** filters. Each card shows its installed version, install method, and **Install** (with a dropdown for other install methods) or **Update** and **Uninstall…** actions. Installer output streams into a panel at the bottom with a **Stop** button.
 
 - **Update all** appears once an update check finds available updates.
-- Click vinoPilot's version button in the header to check for a newer release, update vinoPilot, and restart into the new version.
+- Update `vinoPilot` from its own card, then click **Restart to use …** to relaunch into the new version.
 - `vinoAuthFace` installs system-wide, so its actions run via `pkexec` and prompt for your password. It can be a `.deb` or `.rpm` too (`--via deb` or `--via rpm`).
 
-The window follows your desktop's light or dark theme and automatically switches to a single column when three columns do not fit (for example, when tiled to half a laptop screen):
+The window follows your desktop's light or dark theme and adapts its column count to the window width (from four columns on wide displays down to one column when tiled):
 
 <p align="center">
   <img src="docs/images/window-light.png" width="64%" alt="The window in the light theme">
