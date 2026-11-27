@@ -64,6 +64,15 @@
   </provides>
   <!-- Newest first. release.yml checks the tag has its line here. -->
   <releases>
+    <release version="0.9.0" date="2026-11-27">
+      <description>
+        <ul>
+          <li>Stop and close a running app from its card</li>
+          <li>Shorter text throughout the desktop app and TUI</li>
+          <li>Updated to vino-user-interface 0.6.1</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-11-26">
       <description>
         <ul>

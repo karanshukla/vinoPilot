@@ -5,6 +5,16 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-11-27
+
+### Features
+
+- An app that is running can be stopped from its card with an inline `Stop & close`, in both the desktop app and the TUI.
+
+### Changed
+
+- Unnecessary prose is trimmed from the GUI and TUI, and the app uses `vino-user-interface` 0.6.1.
+
 ## [0.8.0] - 2026-11-26
 
 ### Features
