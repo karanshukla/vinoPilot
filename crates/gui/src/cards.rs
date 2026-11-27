@@ -73,8 +73,8 @@ impl Pilot {
         if apps.is_empty() && tools.is_empty() {
             let message = match self.filter {
                 Filter::Updates => "Everything is up to date.",
-                Filter::Installed => "No components are installed yet.",
-                Filter::All => "No components found.",
+                Filter::Installed => "Nothing installed yet.",
+                Filter::All => "No apps found.",
             };
             widgets::empty_state(ui, message, |ui| {
                 if ui.add(Button::ghost("Show all").small()).clicked() {
@@ -135,7 +135,7 @@ impl Pilot {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(COPIED_FOR));
         }
         let mut copy_clicked = false;
-        let install_from = format!("Install {} options", id.name());
+        let install_from = format!("Install options for {}", id.name());
 
         let tinted = confirming || running_here.is_some();
         let margin = if tinted { 12.0 } else { 0.0 };
@@ -167,7 +167,6 @@ impl Pilot {
                     ui,
                     id,
                     &local,
-                    &update,
                     width - 2.0 * margin,
                     copied_now,
                     &mut copy_clicked,
@@ -272,12 +271,10 @@ fn component_badge(ui: &mut egui::Ui, id: Id) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn title_row(
     ui: &mut egui::Ui,
     id: Id,
     local: &Local,
-    update: &Update,
     width: f32,
     copied_now: bool,
     copy_clicked: &mut bool,
@@ -292,12 +289,12 @@ fn title_row(
         }
         if id.needs_root() {
             widgets::tag(ui, Tone::Neutral, "system")
-                .on_hover_text("Installs system-wide and prompts for your password");
+                .on_hover_text("Installs system-wide (asks for your password)");
         }
         if let Some(shadowed) = local.shadowed.first() {
             widgets::tag(ui, Tone::Warn, "2 copies").on_hover_text(format!(
-                "{} is active; {} is shadowed by it.\n\
-                 Uninstall and reinstall to keep a single copy.",
+                "Running {}. Another copy at {} is ignored.\n\
+                 Uninstall and reinstall to clean this up.",
                 tilde(&shadowed.runs),
                 tilde(&shadowed.hidden)
             ));
@@ -318,7 +315,6 @@ fn title_row(
                 .family(theme::semibold()),
         );
         a11y::heading(&name, id.name(), 3);
-        app_hover_preview(name, id, local, update);
         if !stack_tags {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 draw_tags(ui, copy_clicked);
@@ -330,36 +326,6 @@ fn title_row(
             draw_tags(ui, copy_clicked);
         });
     }
-}
-
-fn app_hover_preview(response: egui::Response, id: Id, local: &Local, update: &Update) {
-    let desc = id.blurb().to_owned();
-    let status = match (&local.installed, update) {
-        (Some(inst), Update::Available { to }) => {
-            format!("Installed via {} · {to} available", inst.channel.label(id))
-        }
-        (Some(inst), Update::UpToDate) => {
-            format!("Installed via {} · up to date", inst.channel.label(id))
-        }
-        (Some(inst), Update::Unknown { reason: Some(why) }) => {
-            format!("Installed via {} · {why}", inst.channel.label(id))
-        }
-        (Some(inst), Update::Unknown { reason: None }) => {
-            format!("Installed via {}", inst.channel.label(id))
-        }
-        (None, _) => "Not installed".to_owned(),
-    };
-    let checkout = local
-        .checkout
-        .as_ref()
-        .map(|c| format!("{} · {}", tilde(&c.path), c.describe));
-    widgets::hover_card(response, id.name(), move |ui| {
-        widgets::small(ui, desc);
-        widgets::small(ui, status);
-        if let Some(path) = &checkout {
-            widgets::mono(ui, path);
-        }
-    });
 }
 
 fn blurb(ui: &mut egui::Ui, id: Id, local: &Local, confirming: bool) {
@@ -445,9 +411,7 @@ fn action_buttons(
             if let Some(newer) = restart_to {
                 if ui
                     .add(Button::primary(format!("Restart to use {newer}")).small())
-                    .on_hover_text(format!(
-                        "vinoPilot {newer} is installed; currently running {VERSION}"
-                    ))
+                    .on_hover_text(format!("Installed {newer}; running {VERSION}"))
                     .clicked()
                 {
                     outcome.restart = true;
@@ -515,8 +479,8 @@ fn distro_tag(ui: &mut egui::Ui, system: &SystemPackage, copied: bool) -> bool {
         })
         .inner
         .on_hover_text(format!(
-            "{} was installed by your system package manager and cannot be removed by vinoPilot.\n\
-             Click to copy the removal command:\n{}",
+            "Installed via {} ({}). Click to copy the remove command:\n{}",
+            system.kind,
             system.packages.join(", "),
             system.remove
         ));
@@ -555,7 +519,7 @@ fn status_line(ui: &mut egui::Ui, id: Id, local: &Local, update: &Update, lookin
     };
     let shown = ui.add(egui::Label::new(RichText::new(text).size(13.0).color(color)).truncate());
     if id == Id::App(vino_ui::App::Pilot) && raw.as_deref() != Some(VERSION) {
-        shown.on_hover_text(format!("Currently running version {VERSION}"));
+        shown.on_hover_text(format!("Running {VERSION}"));
     }
 }
 

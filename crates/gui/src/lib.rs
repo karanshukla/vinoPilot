@@ -61,6 +61,8 @@ pub struct Pilot {
     launcher: Option<Launcher>,
     /// When closing was last refused because a job was running.
     close_refused: Option<f64>,
+    /// Close the window once the job being stopped exits.
+    close_after_stop: bool,
     focused: bool,
     /// The card whose remove command was just copied, and when.
     copied: Option<(Id, f64)>,
@@ -100,6 +102,7 @@ impl Pilot {
             batch: 0,
             launcher: None,
             close_refused: None,
+            close_after_stop: false,
             focused: false,
             copied: None,
             flatpak: false,
@@ -258,6 +261,10 @@ impl Pilot {
         }
         if !self.busy() {
             self.close_refused = None;
+            if self.close_after_stop {
+                self.close_after_stop = false;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 

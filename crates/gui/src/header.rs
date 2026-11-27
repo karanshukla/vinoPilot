@@ -23,6 +23,7 @@ impl Pilot {
                 |ui| pilot.borrow_mut().title_line(ui, !compact),
                 |ui| pilot.borrow_mut().actions(ui),
             );
+            ui.add_space(6.0);
         } else if narrow {
             ui.horizontal_wrapped(|ui| {
                 self.actions(ui);
@@ -30,12 +31,8 @@ impl Pilot {
                     site_link(ui);
                 }
             });
+            ui.add_space(6.0);
         }
-        widgets::muted(
-            ui,
-            "Each app installs using its own checksum-verified installer.",
-        );
-        ui.add_space(6.0);
     }
 
     /// Connected filter buttons (`All`, `Installed`, `Updates`) above the grid.

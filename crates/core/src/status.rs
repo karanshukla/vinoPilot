@@ -55,10 +55,7 @@ pub fn update(installed: Option<&Installed>, latest: Option<&Latest>) -> Update 
             Update::Available { to: newest.clone() }
         }
         Some(Ok(_)) if vino_ui::update::version_parts(version).is_none() => Update::Unknown {
-            reason: Some(format!(
-                "{} isn't a release version",
-                if version.is_empty() { "?" } else { version }
-            )),
+            reason: Some("dev build".into()),
         },
         Some(Ok(_)) => Update::UpToDate,
         Some(Err(why)) => Update::Unknown {
@@ -81,7 +78,7 @@ pub fn update(installed: Option<&Installed>, latest: Option<&Latest>) -> Update 
                 reason: Some(why.clone()),
             },
             None => Update::Unknown {
-                reason: Some("no checkout to compare".into()),
+                reason: Some("no local checkout".into()),
             },
         },
     }
