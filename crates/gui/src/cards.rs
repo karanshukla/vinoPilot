@@ -6,9 +6,10 @@ use eframe::egui::{self, RichText, vec2};
 use vino_ui::{Button, ChipKind, Icon, Tone, a11y, logo, theme, widgets};
 use vinopilot_core::catalog::{self, Action, Channel, Id};
 use vinopilot_core::detect::{Installed, Local, SystemPackage};
+use vinopilot_core::job::Outcome as JobOutcome;
 use vinopilot_core::status::Update;
 
-use crate::{Filter, Pilot, VERSION, tilde};
+use crate::{Filter, Pilot, VERSION, desktop, tilde};
 
 /// Up to four columns on wide desktop displays; drops smoothly to 3, 2, then 1.
 const MAX_COLUMNS: usize = 4;
@@ -22,8 +23,9 @@ const COMPACT_GAP: f32 = 10.0;
 /// The grid stops growing here, so cards don't stretch across an ultrawide screen.
 pub(super) const PAGE_MAX: f32 = 4.0 * 300.0 + 3.0 * GAP;
 
-/// End-user vinoPilot apps, in vinopilot.ca's order.
-const APPS: [Id; 7] = [
+/// End-user vinoPilot apps, starting with vinoPilot itself and then vinopilot.ca's order.
+const APPS: [Id; 8] = [
+    Id::App(vino_ui::App::Pilot),
     Id::App(vino_ui::App::Whisper),
     Id::App(vino_ui::App::AuthFace),
     Id::App(vino_ui::App::OpenEffects),
@@ -36,8 +38,9 @@ const APPS: [Id; 7] = [
 /// Developer and runtime components managed alongside the apps.
 const TOOLS: [Id; 2] = [Id::Ovfetch, Id::Ui];
 
-/// Every card in catalog order. vinoPilot itself lives in the header.
-pub(super) const CARDS: [Id; 9] = [
+/// Every card in catalog order.
+pub(super) const CARDS: [Id; 10] = [
+    Id::App(vino_ui::App::Pilot),
     Id::App(vino_ui::App::Whisper),
     Id::App(vino_ui::App::AuthFace),
     Id::App(vino_ui::App::OpenEffects),
@@ -117,7 +120,11 @@ impl Pilot {
         let mut outcome = Outcome {
             intent: None,
             confirm: self.confirm,
+            restart: false,
         };
+        let restart_to = (id == Id::App(vino_ui::App::Pilot))
+            .then(|| self.updated_to(local.installed.as_ref()))
+            .flatten();
         let channels = id.channels();
         let looking = self.scanning.is_some() && self.local.is_empty();
         let now = ctx.input(|input| input.time);
@@ -191,6 +198,7 @@ impl Pilot {
                             &local,
                             &update,
                             confirming,
+                            restart_to.as_deref(),
                             &channels,
                             &install_from,
                             &mut outcome,
@@ -223,10 +231,23 @@ impl Pilot {
         if copy_clicked {
             self.copied = Some((id, now));
         }
-        if let Some((channel, action)) = outcome.intent {
+        if outcome.restart {
+            restart(&ctx, self.flatpak);
+        } else if let Some((channel, action)) = outcome.intent {
             self.end_batch();
             self.start(&ctx, id, channel, action);
         }
+    }
+
+    /// The version vinoPilot's own update just installed, if it isn't this
+    /// window's.
+    fn updated_to(&self, installed: Option<&Installed>) -> Option<String> {
+        let job = self.job.as_ref()?;
+        let done = job.id == Id::App(vino_ui::App::Pilot)
+            && job.action == Action::Update
+            && job.outcome() == JobOutcome::Done;
+        let version = installed?.version.clone()?;
+        (done && self.scanning.is_none() && version != VERSION).then_some(version)
     }
 }
 
@@ -234,6 +255,7 @@ impl Pilot {
 struct Outcome {
     intent: Option<(Channel, Action)>,
     confirm: Option<Id>,
+    restart: bool,
 }
 
 fn component_badge(ui: &mut egui::Ui, id: Id) {
@@ -367,6 +389,7 @@ fn action_buttons(
     local: &Local,
     update: &Update,
     confirming: bool,
+    restart_to: Option<&str>,
     channels: &[Channel],
     install_from: &str,
     outcome: &mut Outcome,
@@ -419,13 +442,25 @@ fn action_buttons(
             }
         }
         Some(installed) => {
-            let button = if matches!(update, Update::Available { .. }) {
-                Button::tonal("Update")
+            if let Some(newer) = restart_to {
+                if ui
+                    .add(Button::primary(format!("Restart to use {newer}")).small())
+                    .on_hover_text(format!(
+                        "vinoPilot {newer} is installed; currently running {VERSION}"
+                    ))
+                    .clicked()
+                {
+                    outcome.restart = true;
+                }
             } else {
-                Button::secondary("Update")
-            };
-            if ui.add(button.small()).clicked() {
-                outcome.intent = Some((installed.channel, Action::Update));
+                let button = if matches!(update, Update::Available { .. }) {
+                    Button::tonal("Update")
+                } else {
+                    Button::secondary("Update")
+                };
+                if ui.add(button.small()).clicked() {
+                    outcome.intent = Some((installed.channel, Action::Update));
+                }
             }
             let label = if id == Id::Ui {
                 "Trash checkout…"
@@ -437,6 +472,21 @@ fn action_buttons(
             }
         }
     });
+}
+
+/// Starts the installed window and closes this one.
+fn restart(ctx: &egui::Context, flatpak: bool) {
+    let mut new = if flatpak {
+        let mut run = vinopilot_core::command("flatpak");
+        run.args(["run", desktop::APP_ID]);
+        run
+    } else {
+        vinopilot_core::command("vinopilot-gui")
+    };
+    match new.spawn() {
+        Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        Err(e) => eprintln!("vinopilot: couldn't start the new vinopilot-gui: {e}"),
+    }
 }
 
 /// How long a distro tag says "copied".

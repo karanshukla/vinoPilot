@@ -34,7 +34,7 @@ fn the_distro_tag_copies_the_remove_command() {
             ..support::installed(Channel::Source, "4")
         },
     )]);
-    let mut h = support::window(local, HashMap::new(), Vec::new());
+    let mut h = support::window(local, HashMap::new());
     assert!(!copied(&h));
 
     h.get_by_label("Copy removal command for the rpm package")
