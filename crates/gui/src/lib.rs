@@ -9,7 +9,7 @@ use std::sync::mpsc::{Receiver, channel};
 use eframe::egui;
 use vino_ui::{theme, widgets};
 use vinopilot_core::catalog::{self, Action, Channel, Id};
-use vinopilot_core::detect::{Local, Part, Paths};
+use vinopilot_core::detect::{Local, Paths};
 use vinopilot_core::job::{Env, Job, Outcome};
 use vinopilot_core::remote::Latest;
 use vinopilot_core::status::{self, Update};
@@ -36,15 +36,13 @@ pub(crate) enum Filter {
     Updates,
 }
 
-/// What a local scan finds: each component, and vinoPilot's own commands.
-type Scan = (HashMap<Id, Local>, Vec<Part>);
+/// What a local scan finds: each component's installation state.
+type Scan = HashMap<Id, Local>;
 
 pub struct Pilot {
     config: Config,
     source_field: String,
     local: HashMap<Id, Local>,
-    /// vinoPilot's own commands, for the About popup.
-    parts: Vec<Part>,
     scanning: Option<Receiver<Scan>>,
     latest: HashMap<Id, Latest>,
     checking: Option<Receiver<HashMap<Id, Latest>>>,
@@ -91,7 +89,6 @@ impl Pilot {
             source_field: tilde(&config.source_root),
             config,
             local,
-            parts: Vec::new(),
             scanning: None,
             latest,
             checking: None,
@@ -110,12 +107,6 @@ impl Pilot {
         }
     }
 
-    /// The same window, with `parts` as the commands found: for the tests.
-    pub fn with_parts(mut self, parts: Vec<Part>) -> Self {
-        self.parts = parts;
-        self
-    }
-
     /// The same window with its own window buttons, for a window opened
     /// without the desktop's decorations (`vino_ui::window::viewport`).
     pub fn with_app_title_bar(mut self, on: bool) -> Self {
@@ -132,7 +123,7 @@ impl Pilot {
         let paths = self.paths();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send((detect::scan(&paths), detect::parts(&paths)));
+            let _ = tx.send(detect::scan(&paths));
             ctx.request_repaint();
         });
         self.scanning = Some(rx);
@@ -182,7 +173,7 @@ impl Pilot {
         )
     }
 
-    /// What Update all does: the cards. vinoPilot updates from the header.
+    /// What Update all does: every card with an available update.
     fn updatable(&self) -> Vec<Id> {
         CARDS
             .into_iter()
@@ -192,9 +183,8 @@ impl Pilot {
 
     /// Takes whatever the background threads have finished.
     fn poll(&mut self, ctx: &egui::Context) {
-        if let Some((found, parts)) = self.scanning.as_ref().and_then(|rx| rx.try_recv().ok()) {
+        if let Some(found) = self.scanning.as_ref().and_then(|rx| rx.try_recv().ok()) {
             self.local = found;
-            self.parts = parts;
             self.scanning = None;
         }
         if let Some(found) = self.checking.as_ref().and_then(|rx| rx.try_recv().ok()) {
@@ -237,8 +227,8 @@ impl Pilot {
     /// Update all, the components done of all of them (pinned by
     /// `tests::a_single_job_fills_the_bar_by_its_steps` and
     /// `tests::update_all_fills_the_bar_by_components_then_steps`). The badge
-    /// counts what Update all and the header would update (pinned by
-    /// `tests::the_badge_counts_the_cards_and_vinopilot_with_an_update`).
+    /// counts every card with an available update, including vinoPilot (pinned
+    /// by `tests::the_badge_counts_the_cards_and_vinopilot_with_an_update`).
     fn launcher_entry(&self) -> Entry {
         let job = self
             .job
@@ -252,11 +242,7 @@ impl Pilot {
         } else {
             job
         };
-        let pilot = matches!(
-            self.update(Id::App(vino_ui::App::Pilot)),
-            Update::Available { .. }
-        );
-        let count = self.updatable().len() + usize::from(pilot);
+        let count = self.updatable().len();
         Entry {
             progress: progress.map(percent),
             count: (count > 0).then_some(count as i64),

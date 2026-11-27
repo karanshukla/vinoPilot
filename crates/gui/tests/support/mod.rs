@@ -6,16 +6,14 @@ use egui_kittest::Harness;
 use vino_ui::theme;
 use vinopilot_core::Config;
 use vinopilot_core::catalog::{Channel, Id};
-use vinopilot_core::detect::{Installed, Local, Part};
+use vinopilot_core::detect::{Installed, Local};
 use vinopilot_core::remote::Latest;
 use vinopilot_gui::Pilot;
 
-/// The window, styled and run once, showing exactly `local`, `latest` and
-/// `parts`.
+/// The window, styled and run once, showing exactly `local` and `latest`.
 pub fn window(
     local: HashMap<Id, Local>,
     latest: HashMap<Id, Latest>,
-    parts: Vec<Part>,
 ) -> Harness<'static, (Pilot, bool)> {
     let config = Config {
         source_root: "/nowhere".into(),
@@ -30,7 +28,7 @@ pub fn window(
                 }
                 pilot.ui(ui);
             },
-            (Pilot::with(config, local, latest).with_parts(parts), false),
+            (Pilot::with(config, local, latest), false),
         );
     h.run();
     h

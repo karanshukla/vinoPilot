@@ -12,7 +12,7 @@ use vinopilot_gui::Pilot;
 
 fn window(id: Id, channel: Channel) -> Harness<'static, (Pilot, bool)> {
     let local = HashMap::from([(id, support::installed(channel, "1.0.0"))]);
-    support::window(local, HashMap::new(), Vec::new())
+    support::window(local, HashMap::new())
 }
 
 #[test]
