@@ -5,6 +5,13 @@ All notable changes to vinoPilot are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-11-26
+
+### Features
+
+- Redesigned the desktop app as a single-page hub using `vino-user-interface` 0.6.0: full-colour app logos on every card, hairline grid cells with hover previews, connected `All` / `Installed` / `Updates` filters, tonal split `Install` buttons, a header Settings gear popover for the source checkout folder, and responsive layout across 340–1440 px windows.
+- Moved vinoPilot itself out of the header's `ⓘ` popup and into the apps grid alongside the other vinoPilot apps, with the same install, update, uninstall, and in-card `Restart to use …` logic.
+
 ## [0.7.0] - 2026-11-23
 
 ### Features

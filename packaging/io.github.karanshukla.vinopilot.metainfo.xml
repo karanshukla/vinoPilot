@@ -64,6 +64,15 @@
   </provides>
   <!-- Newest first. release.yml checks the tag has its line here. -->
   <releases>
+    <release version="0.8.0" date="2026-11-26">
+      <description>
+        <ul>
+          <li>Single-page hub redesign with app logos, split Install buttons, filters, and responsive layout</li>
+          <li>Moved vinoPilot out of the header popup into the apps grid alongside the other apps</li>
+          <li>Updated to vino-user-interface 0.6.0 with Material 3 Expressive controls and a new Settings gear icon</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-11-23">
       <description>
         <ul>
