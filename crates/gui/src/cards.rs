@@ -307,21 +307,31 @@ fn title_row(
         }
     };
     let stack_tags = has_tags && width < 290.0;
-    ui.horizontal(|ui| {
+    let draw_title = |ui: &mut egui::Ui| {
         component_badge(ui, id);
-        let name = ui.label(
-            RichText::new(id.name())
-                .size(15.0)
-                .family(theme::semibold()),
+        let name = ui.add(
+            egui::Label::new(
+                RichText::new(id.name())
+                    .size(15.0)
+                    .family(theme::semibold()),
+            )
+            .truncate(),
         );
         a11y::heading(&name, id.name(), 3);
-        if !stack_tags {
+    };
+    if !stack_tags {
+        ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 draw_tags(ui, copy_clicked);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let clip = ui.max_rect().intersect(ui.clip_rect());
+                    ui.set_clip_rect(clip);
+                    draw_title(ui);
+                });
             });
-        }
-    });
-    if stack_tags {
+        });
+    } else {
+        ui.horizontal(draw_title);
         ui.horizontal_wrapped(|ui| {
             draw_tags(ui, copy_clicked);
         });

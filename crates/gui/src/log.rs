@@ -38,51 +38,62 @@ impl Pilot {
         let lines = job.lines();
         let mut close = false;
         let mut stop = false;
-        widgets::responsive_bar(
-            ui,
-            480.0,
-            |ui| match &outcome {
-                Outcome::Running => {
-                    widgets::spinner(ui);
-                    a11y::live(&widgets::chip(ui, ChipKind::Neutral, &title));
+        let draw_status = |ui: &mut egui::Ui| match &outcome {
+            Outcome::Running => {
+                widgets::spinner(ui);
+                a11y::live(&widgets::chip(ui, ChipKind::Neutral, &title));
+            }
+            Outcome::Done => {
+                a11y::live(&widgets::chip(ui, ChipKind::Ok, &format!("{title}: done")));
+            }
+            Outcome::Stopped => {
+                a11y::live(&widgets::chip(
+                    ui,
+                    ChipKind::Warn,
+                    &format!("{title}: stopped"),
+                ));
+            }
+            Outcome::Failed(_) => {
+                a11y::live(&widgets::chip(
+                    ui,
+                    ChipKind::Err,
+                    &format!("{title}: failed"),
+                ));
+            }
+        };
+        let mut draw_controls = |ui: &mut egui::Ui| {
+            if outcome == Outcome::Running {
+                if ui.add(Button::secondary("Stop").small()).clicked() {
+                    stop = true;
                 }
-                Outcome::Done => {
-                    a11y::live(&widgets::chip(ui, ChipKind::Ok, &format!("{title}: done")));
+                if let Some(fraction) = progress {
+                    let bar_w = ui.available_width().clamp(64.0, 120.0);
+                    widgets::progress(ui, fraction as f32, bar_w);
                 }
-                Outcome::Stopped => {
-                    a11y::live(&widgets::chip(
-                        ui,
-                        ChipKind::Warn,
-                        &format!("{title}: stopped"),
-                    ));
+            } else {
+                if ui.add(Button::ghost("Close").small()).clicked() {
+                    close = true;
                 }
-                Outcome::Failed(_) => {
-                    a11y::live(&widgets::chip(
-                        ui,
-                        ChipKind::Err,
-                        &format!("{title}: failed"),
-                    ));
+                if !lines.is_empty() {
+                    widgets::copy_button(ui, &lines.join("\n"), "Copy log");
                 }
-            },
-            |ui| {
-                if outcome == Outcome::Running {
-                    if ui.add(Button::secondary("Stop").small()).clicked() {
-                        stop = true;
-                    }
-                    if let Some(fraction) = progress {
-                        let bar_w = ui.available_width().clamp(64.0, 120.0);
-                        widgets::progress(ui, fraction as f32, bar_w);
-                    }
-                } else {
-                    if ui.add(Button::ghost("Close").small()).clicked() {
-                        close = true;
-                    }
-                    if !lines.is_empty() {
-                        widgets::copy_button(ui, &lines.join("\n"), "Copy log");
-                    }
-                }
-            },
-        );
+            }
+        };
+        if ui.available_width() >= 480.0 {
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    draw_controls(ui);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        let clip = ui.max_rect().intersect(ui.clip_rect());
+                        ui.set_clip_rect(clip);
+                        draw_status(ui);
+                    });
+                });
+            });
+        } else {
+            ui.horizontal_wrapped(draw_status);
+            ui.horizontal_wrapped(draw_controls);
+        }
         if stop {
             job.stop();
             self.queue.clear();
